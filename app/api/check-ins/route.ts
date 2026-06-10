@@ -41,11 +41,18 @@ function getRangeFromParams(searchParams: URLSearchParams) {
   if (startDate || endDate) {
     const range: any = {};
     if (startDate) {
-      const start = new Date(startDate);
+      const start = /^\d{4}-\d{2}-\d{2}$/.test(startDate)
+        ? new Date(`${startDate}T00:00:00`)
+        : new Date(startDate);
       if (!Number.isNaN(start.getTime())) range.$gte = start;
     }
     if (endDate) {
-      const end = new Date(endDate);
+      const end = /^\d{4}-\d{2}-\d{2}$/.test(endDate)
+        ? new Date(`${endDate}T00:00:00`)
+        : new Date(endDate);
+      if (!Number.isNaN(end.getTime()) && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+        end.setDate(end.getDate() + 1);
+      }
       if (!Number.isNaN(end.getTime())) range.$lt = end;
     }
     return Object.keys(range).length ? range : undefined;

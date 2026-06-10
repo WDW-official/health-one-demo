@@ -6,6 +6,7 @@ import {
   CalendarCheck,
   CheckCircle2,
   Clock,
+  Download,
   Eye,
   MoreHorizontal,
   Plus,
@@ -85,13 +86,15 @@ export default function CheckInsPage() {
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [selectedDoctorId, setSelectedDoctorId] = useState('');
   const [notes, setNotes] = useState('');
-  const [dateFilter, setDateFilter] = useState(formatDateInput(new Date()));
+  const [startDateFilter, setStartDateFilter] = useState(formatDateInput(new Date()));
+  const [endDateFilter, setEndDateFilter] = useState(formatDateInput(new Date()));
   const [searchTerm, setSearchTerm] = useState('');
   const [doctorFilter, setDoctorFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('waiting');
   const [todayAppointment, setTodayAppointment] = useState<Appointment | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [isAppointmentLoading, setIsAppointmentLoading] = useState(false);
   const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
 
@@ -102,16 +105,18 @@ export default function CheckInsPage() {
     [patients, selectedPatientId]
   );
 
+  const getCheckInParams = (limit = PAGE_SIZE, skip = (page - 1) * PAGE_SIZE) => ({
+    limit,
+    skip,
+    startDate: startDateFilter || undefined,
+    endDate: endDateFilter || undefined,
+    search: searchTerm.trim() || undefined,
+    doctorId: effectiveDoctorFilter || undefined,
+    status: statusFilter === 'all' ? undefined : statusFilter,
+  });
+
   const loadCheckIns = async () => {
-    const skip = (page - 1) * PAGE_SIZE;
-    const res = await ApiClient.getCheckIns({
-      limit: PAGE_SIZE,
-      skip,
-      date: dateFilter,
-      search: searchTerm.trim() || undefined,
-      doctorId: effectiveDoctorFilter || undefined,
-      status: statusFilter === 'all' ? undefined : statusFilter,
-    });
+    const res = await ApiClient.getCheckIns(getCheckInParams());
     setCheckIns(res?.data || []);
     setTotal(res?.total || 0);
   };
@@ -157,7 +162,7 @@ export default function CheckInsPage() {
   }, []);
 
   useEffect(() => {
-    if (!dateFilter) return;
+    if (!startDateFilter && !endDateFilter) return;
 
     const refresh = async () => {
       try {
@@ -169,7 +174,7 @@ export default function CheckInsPage() {
 
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFilter, searchTerm, doctorFilter, statusFilter, page, user?.role, user?.doctorId]);
+  }, [startDateFilter, endDateFilter, searchTerm, doctorFilter, statusFilter, page, user?.role, user?.doctorId]);
 
   useEffect(() => {
     const loadTodayAppointment = async () => {
@@ -264,6 +269,90 @@ export default function CheckInsPage() {
     }
   };
 
+  const csvValue = (value: unknown) => {
+    const text = value === undefined || value === null ? '' : String(value);
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+
+  const handleDownloadCsv = async () => {
+    if (startDateFilter && endDateFilter && startDateFilter > endDateFilter) {
+      toast({
+        title: 'Invalid date range',
+        description: 'Start date must be before or the same as end date.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      const exportLimit = 200;
+      let skip = 0;
+      let fetchedTotal = 0;
+      const rows: CheckIn[] = [];
+
+      do {
+        const res = await ApiClient.getCheckIns(getCheckInParams(exportLimit, skip));
+        const batch = res?.data || [];
+        rows.push(...batch);
+        fetchedTotal = res?.total ?? rows.length;
+        skip += batch.length;
+        if (batch.length === 0) break;
+      } while (rows.length < fetchedTotal);
+
+      if (rows.length === 0) {
+        toast({
+          title: 'No check-ins to export',
+          description: 'Adjust the filters or date range and try again.',
+        });
+        return;
+      }
+
+      const headers = [
+        'Patient',
+        'MRN',
+        'Doctor',
+        'Appointment',
+        'Status',
+        'Checked In',
+        'Staff',
+        'Notes',
+      ];
+      const csvRows = rows.map((checkIn) => [
+        checkIn.patientName,
+        checkIn.patientMrn || '',
+        `Dr. ${checkIn.doctorName}`,
+        checkIn.appointmentNumber || (checkIn.appointmentId ? checkIn.appointmentId : 'Walk-in'),
+        statusLabel(checkIn.status),
+        checkIn.checkedInAt.toLocaleString(),
+        checkIn.checkedInByName,
+        checkIn.notes || '',
+      ]);
+      const csv = [headers, ...csvRows]
+        .map((row) => row.map(csvValue).join(','))
+        .join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const period = `${startDateFilter || 'start'}_to_${endDateFilter || 'end'}`;
+      link.href = url;
+      link.download = `check-ins_${period}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({
+        title: 'Could not export check-ins',
+        description: getErrorMessage(error, 'Failed to download CSV'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (isLoading) {
     return <LoadingState label="Loading check-ins" />;
   }
@@ -279,13 +368,24 @@ export default function CheckInsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Patient Check-ins</h1>
           <p className="text-gray-600 mt-1">Manage checked-in patients and doctor assignments</p>
         </div>
-        <Button
-          type="button"
-          onClick={() => setIsCheckInModalOpen(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Check In Patient
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDownloadCsv}
+            disabled={isExporting}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            {isExporting ? 'Preparing CSV...' : 'Download CSV'}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => setIsCheckInModalOpen(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Check In Patient
+          </Button>
+        </div>
       </div>
 
       <Dialog open={isCheckInModalOpen} onOpenChange={setIsCheckInModalOpen}>
@@ -367,10 +467,14 @@ export default function CheckInsPage() {
 
       <Card>
         <CardContent className="pt-6">
-          <div className="grid gap-3 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr]">
+          <div className="grid gap-3 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.8fr]">
             <div className="relative">
-              <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              <Label className="mb-1 block text-xs font-medium text-gray-600" htmlFor="check-in-search">
+                Search
+              </Label>
+              <Search className="absolute left-3 top-[2.15rem] w-4 h-4 text-gray-400" />
               <Input
+                id="check-in-search"
                 placeholder="Search by patient, MRN, staff, or appointment..."
                 value={searchTerm}
                 onChange={(event) => {
@@ -381,17 +485,39 @@ export default function CheckInsPage() {
               />
             </div>
             <div>
+              <Label className="mb-1 block text-xs font-medium text-gray-600" htmlFor="check-in-start-date">
+                Start date
+              </Label>
               <Input
+                id="check-in-start-date"
                 type="date"
-                value={dateFilter}
+                value={startDateFilter}
                 onChange={(event) => {
-                  setDateFilter(event.target.value);
+                  setStartDateFilter(event.target.value);
                   setPage(1);
                 }}
               />
             </div>
 
             <div>
+              <Label className="mb-1 block text-xs font-medium text-gray-600" htmlFor="check-in-end-date">
+                End date
+              </Label>
+              <Input
+                id="check-in-end-date"
+                type="date"
+                value={endDateFilter}
+                onChange={(event) => {
+                  setEndDateFilter(event.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+
+            <div>
+              <Label className="mb-1 block text-xs font-medium text-gray-600">
+                Doctor
+              </Label>
               <Select
                 value={user?.role === 'doctor' ? user.doctorId || 'all' : doctorFilter || 'all'}
                 onValueChange={(value) => {
@@ -415,6 +541,9 @@ export default function CheckInsPage() {
             </div>
 
             <div>
+              <Label className="mb-1 block text-xs font-medium text-gray-600">
+                Status
+              </Label>
               <Select
                 value={statusFilter}
                 onValueChange={(value) => {

@@ -1,4 +1,4 @@
-# Health One Dental Clinic - Patient Management System
+# Health One Dental Clinic - Health Management System
 
 Complete professional full-stack application for managing dental clinic operations with modern technologies.
 

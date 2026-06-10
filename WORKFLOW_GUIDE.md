@@ -2,7 +2,7 @@
 
 ## System Overview
 
-The Health One Dental Clinic Patient Management System implements the complete patient journey as specified in the requirements, with clear visual workflows guiding staff through every step.
+The Health One Dental Clinic Health Management System implements the complete patient journey as specified in the requirements, with clear visual workflows guiding staff through every step.
 
 ---
 

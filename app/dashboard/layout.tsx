@@ -360,7 +360,7 @@ export default function DashboardLayout({
             {sidebarExpanded && (
               <div>
                 <h1 className="text-lg font-semibold leading-none text-white">Health One</h1>
-                <p className="mt-1 text-xs text-cyan-50/80">Dental Clinic Console</p>
+                <p className="mt-1 text-xs text-cyan-50/80">Health Management System</p>
               </div>
             )}
           </div>

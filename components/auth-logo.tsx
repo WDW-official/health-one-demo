@@ -5,14 +5,14 @@ const AUTH_LOGO_URL =
 
 export function AuthLogo() {
   return (
-    <div className="flex justify-start pb-4">
+    <div className="flex justify-center pb-4">
       <Image
         src={AUTH_LOGO_URL}
         alt="Health One"
         width={420}
         height={160}
         priority
-        className="h-auto w-2/3 object-contain object-left"
+        className="h-auto w-2/3 object-contain"
       />
     </div>
   );

@@ -104,7 +104,7 @@ export default function ForgotPasswordPage() {
       </div>
 
       <p className="relative mx-auto mt-6 text-center text-xs text-slate-500">
-        © Health One Patient Management System. All rights reserved.
+        © Health One Health Management System. All rights reserved.
       </p>
     </div>
   );
