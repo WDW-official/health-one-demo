@@ -40,20 +40,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search')?.trim();
     const { limit, skip } = getPagination(searchParams, 10, 100);
-    const doctorId = searchParams.get('doctorId'); // Filter by assigned doctor
+    const doctorId = searchParams.get('doctorId'); // Filter by assigned doctor for admin views only
     const user = getRequestUser(request);
 
     let query: any = { isActive: true };
 
-    if (user?.role === 'doctor') {
-      if (doctorId && doctorId !== user.doctorId) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-      }
-
-      if (user.doctorId) {
-        query.assignedDoctorId = user.doctorId;
-      }
-    } else if (doctorId) {
+    if (user?.role !== 'doctor' && doctorId) {
       query.assignedDoctorId = doctorId;
     }
 

@@ -107,7 +107,7 @@ export function initializeStore(): void {
         doctorId: '2',
         dateTime: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
         duration: 45,
-        type: 'Scaling/Polishing',
+        type: 'Scaling and Polishing',
         status: 'scheduled',
         notes: 'Dental cleaning',
         createdAt: new Date(),

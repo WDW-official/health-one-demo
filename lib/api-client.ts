@@ -9,6 +9,7 @@ type ListParams = {
   doctorId?: string;
   patientId?: string;
   appointmentId?: string;
+  consultationId?: string;
   category?: string;
   recipientId?: string;
   status?: string;
@@ -58,6 +59,23 @@ function normalizeConsultation<T extends Record<string, any>>(consultation: T) {
   return {
     ...normalized,
     nextVisitDate: normalized.nextVisitDate ? new Date(normalized.nextVisitDate as string) : normalized.nextVisitDate,
+    createdAt: normalized.createdAt ? new Date(normalized.createdAt as string) : normalized.createdAt,
+    updatedAt: normalized.updatedAt ? new Date(normalized.updatedAt as string) : normalized.updatedAt,
+  };
+}
+
+function normalizeBilling<T extends Record<string, any>>(billing: T) {
+  const normalized = normalizeDocument(billing);
+  if (!normalized || typeof normalized !== 'object') return normalized;
+  return {
+    ...normalized,
+    consultationDate: normalized.consultationDate ? new Date(normalized.consultationDate as string) : normalized.consultationDate,
+    hmoClaimSubmissionDate: normalized.hmoClaimSubmissionDate ? new Date(normalized.hmoClaimSubmissionDate as string) : normalized.hmoClaimSubmissionDate,
+    hmoClaimPaymentDate: normalized.hmoClaimPaymentDate ? new Date(normalized.hmoClaimPaymentDate as string) : normalized.hmoClaimPaymentDate,
+    payments: (normalized.payments || []).map((payment: any) => ({
+      ...payment,
+      paidAt: payment.paidAt ? new Date(payment.paidAt as string) : payment.paidAt,
+    })),
     createdAt: normalized.createdAt ? new Date(normalized.createdAt as string) : normalized.createdAt,
     updatedAt: normalized.updatedAt ? new Date(normalized.updatedAt as string) : normalized.updatedAt,
   };
@@ -519,10 +537,18 @@ export class ApiClient {
   }
 
   static async updateConsultation(id: string, consultationData: any) {
-    return this.request(`/consultations/${id}`, {
+    const response = await this.request<any>(`/consultations/${id}`, {
       method: 'PUT',
       body: JSON.stringify(consultationData),
     });
+    const consultation = normalizeConsultation(response?.consultation || response?.data || {});
+    const billing = response?.billing ? normalizeBilling(response.billing) : response?.billing;
+    return {
+      ...response,
+      data: consultation,
+      consultation,
+      billing,
+    };
   }
 
   static async deleteConsultation(id: string) {
@@ -555,6 +581,52 @@ export class ApiClient {
 
   static async getUpcomingFollowUps() {
     return this.request('/consultations/upcoming-followups');
+  }
+
+  // Billing endpoints
+  static async getBilling(params: ListParams & { hmoProvider?: string; hmoClaimStatus?: string } = {}) {
+    const response = await this.request<any>(`/billing${buildQuery(params)}`);
+    return {
+      ...response,
+      data: normalizeArray(response?.data || []).map(normalizeBilling),
+      billing: normalizeArray(response?.billing || []).map(normalizeBilling),
+    };
+  }
+
+  static async getBillingRecord(id: string) {
+    const response = await this.request<any>(`/billing/${id}`);
+    const billing = normalizeBilling(response?.billing || response?.data || {});
+    return {
+      ...response,
+      data: billing,
+      billing,
+    };
+  }
+
+  static async updateBillingRecord(id: string, billingData: any) {
+    const response = await this.request<any>(`/billing/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(billingData),
+    });
+    const billing = normalizeBilling(response?.billing || response?.data || {});
+    return {
+      ...response,
+      data: billing,
+      billing,
+    };
+  }
+
+  static async recordBillingPayment(id: string, paymentData: any) {
+    const response = await this.request<any>(`/billing/${id}/payments`, {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    });
+    const billing = normalizeBilling(response?.billing || response?.data || {});
+    return {
+      ...response,
+      data: billing,
+      billing,
+    };
   }
 
   // Reminder endpoints
@@ -640,5 +712,67 @@ export class ApiClient {
       data: normalizeArray(response?.data || []).map(normalizeSponsoredItem),
       sponsoredItems: normalizeArray(response?.sponsoredItems || []).map(normalizeSponsoredItem),
     };
+  }
+
+  // Inventory Report endpoints
+  static async getInventoryReport(params: ListParams = {}) {
+    return this.request(`/reports/inventory${buildQuery(params)}`);
+  }
+
+  static async getInventorySummary() {
+    return this.request('/reports/inventory/summary');
+  }
+
+  static async getLowStockItems() {
+    return this.request('/reports/inventory/low-stock');
+  }
+
+  static async getInventoryActivity() {
+    return this.request('/reports/inventory/activity');
+  }
+
+  static async createStockItem(stockData: any) {
+    return this.request('/inventory', {
+      method: 'POST',
+      body: JSON.stringify(stockData),
+    });
+  }
+
+  static async updateStockItem(id: string, stockData: any) {
+    return this.request(`/inventory/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(stockData),
+    });
+  }
+
+  static async deleteStockItem(id: string) {
+    return this.request(`/inventory/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  static async getInventoryCategories() {
+    return this.request('/inventory/categories');
+  }
+
+  static async createInventoryCategory(name: string) {
+    return this.request('/inventory/categories', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  static async getInventorySuppliers() {
+    return this.request('/inventory/suppliers');
+  }
+
+  static async getProcedureConsumableTemplates(params: ListParams = {}) {
+    return this.request(`/inventory/procedure-consumables${buildQuery(params)}`);
+  }
+
+  static async seedProcedureConsumableTemplates() {
+    return this.request('/inventory/procedure-consumables', {
+      method: 'POST',
+    });
   }
 }

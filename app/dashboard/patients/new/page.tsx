@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -13,11 +13,7 @@ import { ChevronLeft } from 'lucide-react';
 
 export default function NewPatientPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    setUser(getCurrentUser());
-  }, []);
+  const [user] = useState<User | null>(() => getCurrentUser());
 
   const handleBack = () => {
     if (window.history.length > 1) {

@@ -22,6 +22,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { ApiClient } from '@/lib/api-client';
 import { getCurrentUser } from '@/lib/auth';
+import { toast } from '@/hooks/use-toast';
 import { Doctor, User } from '@/lib/types';
 import { AlertCircle, CheckCircle2, Search, ShieldCheck, Stethoscope, UserCheck, UserMinus, UserPlus, Users2 } from 'lucide-react';
 
@@ -204,6 +205,10 @@ export default function UsersPage() {
             ? 'Superadmin created successfully.'
             : 'Admin user created successfully.'
       );
+      toast({
+        title: 'User added',
+        description: `${form.name.trim()} can now sign in with first-login password setup.`,
+      });
       setForm({
         name: '',
         email: '',

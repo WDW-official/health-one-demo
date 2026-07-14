@@ -304,74 +304,91 @@ export default function AppointmentsPage() {
           ) : (
             <div className="space-y-3">
               {appointments.map((apt) => (
-                <div key={apt.id} className="flex flex-col gap-4 rounded-lg border p-4 hover:bg-gray-50 md:flex-row md:items-center md:justify-between">
-                  <div className="flex-1">
-                    <Link
-                      href={`/dashboard/appointments/${apt.id}`}
-                      className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 hover:underline"
-                    >
-                      Appointment {apt.appointmentNumber || apt.id}
-                    </Link>
-                    <p className="font-medium text-sm">
-                      <Link href={`/dashboard/patients/${apt.patientId}`} className="hover:text-blue-600">
-                        {apt.patientName || 'Patient'}
-                      </Link>
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {new Date(apt.dateTime).toLocaleString()}
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <span className="inline-block rounded bg-blue-100 px-2 py-1 text-xs font-medium capitalize text-blue-800">
+                <Link
+                  key={apt.id}
+                  href={`/dashboard/appointments/${apt.id}`}
+                  className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:bg-slate-50"
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold uppercase tracking-[0.16em] text-teal-700 hover:underline">
+                          Appointment {apt.appointmentNumber || apt.id}
+                        </span>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
+                            apt.status === 'completed'
+                              ? 'bg-green-100 text-green-800'
+                              : apt.status === 'cancelled'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {apt.status}
+                        </span>
+                      </div>
+
+                      <p className="mt-2 font-medium text-slate-900">
+                        <Link href={`/dashboard/patients/${apt.patientId}`} className="hover:text-blue-600">
+                          {apt.patientName || 'Patient'}
+                        </Link>
+                      </p>
+
+                      <div className="mt-3 flex flex-col gap-2 text-sm text-slate-600 sm:flex-row sm:flex-wrap sm:gap-x-4">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-4 w-4" />
+                          {new Date(apt.dateTime).toLocaleString()}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <CalendarClock className="h-4 w-4" />
+                          {apt.type}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 md:flex-col md:items-end">
+                      <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold capitalize text-blue-800">
                         {apt.type}
                       </span>
-                      <span
-                        className={`inline-block rounded px-2 py-1 text-xs font-medium capitalize ${
-                          apt.status === 'completed'
-                            ? 'bg-green-100 text-green-800'
-                            : apt.status === 'cancelled'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                        }`}
-                      >
-                        {apt.status}
-                      </span>
+                      <div onClick={(event) => event.preventDefault()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="rounded-full">
+                              <MoreHorizontal className="h-4 w-4" />
+                              <span className="sr-only">Open appointment actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" side="left" sideOffset={4}>
+                            <DropdownMenuItem asChild>
+                              <Link href={`/dashboard/appointments/${apt.id}`}>View</Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href={`/dashboard/appointments/${apt.id}/edit?mode=reschedule`}>
+                                <CalendarClock className="h-4 w-4" />
+                                Reschedule
+                              </Link>
+                            </DropdownMenuItem>
+                            {apt.status === 'scheduled' && (
+                              <>
+                                <DropdownMenuItem onSelect={() => handleStatusChange(apt.id, 'completed')}>
+                                  <CheckCircle className="h-4 w-4" />
+                                  Mark complete
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onSelect={() => handleStatusChange(apt.id, 'cancelled')}
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                  Cancel
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="rounded-full">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Open appointment actions</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link href={`/dashboard/appointments/${apt.id}`}>View</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href={`/dashboard/appointments/${apt.id}/edit?mode=reschedule`}>
-                          <CalendarClock className="h-4 w-4" />
-                          Reschedule
-                        </Link>
-                      </DropdownMenuItem>
-                      {apt.status === 'scheduled' && (
-                        <>
-                          <DropdownMenuItem onSelect={() => handleStatusChange(apt.id, 'completed')}>
-                            <CheckCircle className="h-4 w-4" />
-                            Mark complete
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onSelect={() => handleStatusChange(apt.id, 'cancelled')}
-                          >
-                            <XCircle className="h-4 w-4" />
-                            Cancel
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                </Link>
               ))}
             </div>
           )}

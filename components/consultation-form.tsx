@@ -7,12 +7,20 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Spinner } from '@/components/ui/spinner';
-import { Consultation, ConsultationAttachment, Patient, Appointment, Doctor } from '@/lib/types';
+import {
+  Consultation,
+  ConsultationAttachment,
+  ConsultationConsumableUsage,
+  Patient,
+  Appointment,
+  Doctor,
+} from '@/lib/types';
 import { getCurrentUser } from '@/lib/auth';
 import { ApiClient } from '@/lib/api-client';
+import { getProcedureCategory, PROCEDURE_GROUPS, type ConsultationProcedure } from '@/lib/procedure-types';
 import { getErrorMessage } from '@/lib/error-message';
 import { toast } from '@/hooks/use-toast';
-import { AlertCircle, FileUp, Plus, Paperclip, Trash2, X } from 'lucide-react';
+import { AlertCircle, FileUp, Plus, Paperclip, Sparkles, Trash2, X } from 'lucide-react';
 
 interface ConsultationFormProps {
   consultation?: Consultation;
@@ -32,9 +40,26 @@ const emptyChartBlock: ConsultationChartBlock = {
   lowerLeft: '',
   lowerRight: '',
 };
+const minDateTime = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
 
 const chartFieldClass =
   'min-h-24 w-full resize-none border-0 bg-transparent p-3 text-base leading-6 text-slate-800 outline-none placeholder:text-slate-400 focus:ring-0 md:text-sm';
+
+const emptyProcedure: ConsultationProcedure = {
+  category: PROCEDURE_GROUPS[0].category,
+  procedure: PROCEDURE_GROUPS[0].procedures[0],
+  status: 'completed',
+};
+
+const emptyActualConsumable: ConsultationConsumableUsage = {
+  name: '',
+  quantity: 1,
+  unit: '',
+  source: 'actual',
+  notes: '',
+};
 
 export default function ConsultationForm({
   consultation,
@@ -56,6 +81,16 @@ export default function ConsultationForm({
       ? (consultation as any).chartBlocks
       : [{ ...emptyChartBlock }]
   );
+  const [procedures, setProcedures] = useState<ConsultationProcedure[]>(
+    ((consultation as any)?.procedures || []).length > 0
+      ? (consultation as any).procedures
+      : [{ ...emptyProcedure }]
+  );
+  const [actualConsumables, setActualConsumables] = useState<ConsultationConsumableUsage[]>(
+    ((consultation as any)?.actualConsumables || []).length > 0
+      ? (consultation as any).actualConsumables
+      : []
+  );
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadStatus, setUploadStatus] = useState('');
@@ -72,7 +107,7 @@ export default function ConsultationForm({
     treatment: consultation?.treatment || '',
     prescription: consultation?.prescription || '',
     nextVisitDate: consultation?.nextVisitDate
-      ? consultation.nextVisitDate.toISOString().split('T')[0]
+      ? consultation.nextVisitDate.toISOString().slice(0, 16)
       : '',
     notes: consultation?.notes || '',
   });
@@ -107,6 +142,12 @@ export default function ConsultationForm({
           ? (consultation as any).chartBlocks
           : [{ ...emptyChartBlock }]
       );
+      setProcedures(
+        ((consultation as any)?.procedures || []).length > 0
+          ? (consultation as any).procedures
+          : [{ ...emptyProcedure }]
+      );
+      setActualConsumables((consultation as any)?.actualConsumables || []);
 
       if (!consultation?.patientId && appointmentIdParam) {
         const linkedAppointment = (appointmentRes?.data || []).find((apt: Appointment) => apt.id === appointmentIdParam);
@@ -185,6 +226,106 @@ export default function ConsultationForm({
     chartBlocks.filter((block) =>
       Object.values(block).some((value) => value.trim().length > 0)
     );
+
+  const addProcedure = () => {
+    setProcedures((current) => [...current, { ...emptyProcedure }]);
+  };
+
+  const removeProcedure = (index: number) => {
+    setProcedures((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  };
+
+  const updateProcedureCategory = (index: number, category: string) => {
+    const group = PROCEDURE_GROUPS.find((item) => item.category === category);
+    setProcedures((current) =>
+      current.map((item, currentIndex) =>
+        currentIndex === index
+          ? {
+              ...item,
+              category,
+              procedure: group?.procedures[0] || item.procedure,
+            }
+          : item
+      )
+    );
+  };
+
+  const updateProcedure = (index: number, procedure: string) => {
+    setProcedures((current) =>
+      current.map((item, currentIndex) =>
+        currentIndex === index
+          ? {
+              ...item,
+              category: item.category || getProcedureCategory(procedure),
+              procedure,
+            }
+          : item
+      )
+    );
+  };
+
+  const updateProcedureStatus = (index: number, status: ConsultationProcedure['status']) => {
+    setProcedures((current) =>
+      current.map((item, currentIndex) =>
+        currentIndex === index
+          ? {
+              ...item,
+              status,
+            }
+          : item
+      )
+    );
+  };
+
+  const getFilledProcedures = () =>
+    procedures
+      .filter((item) => item.procedure && item.procedure.trim().length > 0)
+      .map((item) => ({
+        ...item,
+        status: item.status || 'completed',
+      }));
+
+  const addActualConsumable = () => {
+    setActualConsumables((current) => [...current, { ...emptyActualConsumable }]);
+  };
+
+  const removeActualConsumable = (index: number) => {
+    setActualConsumables((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  };
+
+  const updateActualConsumable = (
+    index: number,
+    field: keyof ConsultationConsumableUsage,
+    value: string
+  ) => {
+    setActualConsumables((current) =>
+      current.map((item, currentIndex) =>
+        currentIndex === index
+          ? {
+              ...item,
+              [field]: field === 'quantity' ? Number(value || 0) : value,
+              source: 'actual',
+            }
+          : item
+      )
+    );
+  };
+
+  const getFilledActualConsumables = () =>
+    actualConsumables
+      .filter((item) => item.name && item.name.trim().length > 0)
+      .map((item) => ({
+        ...item,
+        quantity: Number(item.quantity || 0),
+        source: 'actual' as const,
+      }));
+
+  const aiAssistReady = [
+    formData.presentingComplaints,
+    formData.examination,
+    formData.diagnosis,
+    formData.treatmentPlan,
+  ].some((value) => value.trim().length > 0);
 
   const uploadSingleAttachment = (file: File, progressCallback?: (percent: number) => void) => {
     return new Promise<ConsultationAttachment>((resolve, reject) => {
@@ -312,6 +453,8 @@ export default function ConsultationForm({
           doctorId: consultation.doctorId,
           chartBlocks: getFilledChartBlocks(),
           attachments,
+          procedures: getFilledProcedures(),
+          actualConsumables: getFilledActualConsumables(),
         });
         toast({ title: 'Consultation updated', description: 'The consultation record was saved successfully.' });
         router.push(`/dashboard/consultations/${consultation.id}`);
@@ -322,6 +465,10 @@ export default function ConsultationForm({
           doctorId: formData.doctorId,
           chartBlocks: getFilledChartBlocks(),
           attachments,
+          procedures: getFilledProcedures(),
+          actualConsumables: getFilledActualConsumables(),
+          // paymentAmount: Number(formData.paymentAmount || 0),
+          // paymentStatus: formData.paymentStatus,
         });
         const newConsultation = res?.data || res?.consultation;
         toast({ title: 'Consultation created', description: 'The consultation record was saved successfully.' });
@@ -350,12 +497,12 @@ export default function ConsultationForm({
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
             <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium mb-1">Patient *</label>
               <SearchableSelect
@@ -480,30 +627,30 @@ export default function ConsultationForm({
 
                   <div className="mx-auto grid max-w-xl grid-cols-2 overflow-hidden rounded-2xl border-2 border-black bg-white">
                     <textarea
-                      value={block.upperLeft}
-                      onChange={(event) => updateChartBlock(index, 'upperLeft', event.target.value)}
-                      placeholder="Upper left"
-                      rows={3}
-                      className={`${chartFieldClass} border-b-2 border-black`}
-                    />
-                    <textarea
                       value={block.upperRight}
                       onChange={(event) => updateChartBlock(index, 'upperRight', event.target.value)}
                       placeholder="Upper right"
                       rows={3}
-                      className={`${chartFieldClass} border-b-2 border-l-2 border-black`}
+                      className={`${chartFieldClass} border-b-2 border-black`}
                     />
                     <textarea
-                      value={block.lowerLeft}
-                      onChange={(event) => updateChartBlock(index, 'lowerLeft', event.target.value)}
-                      placeholder="Lower left"
+                      value={block.upperLeft}
+                      onChange={(event) => updateChartBlock(index, 'upperLeft', event.target.value)}
+                      placeholder="Upper left"
                       rows={3}
-                      className={chartFieldClass}
+                      className={`${chartFieldClass} border-b-2 border-l-2 border-black`}
                     />
                     <textarea
                       value={block.lowerRight}
                       onChange={(event) => updateChartBlock(index, 'lowerRight', event.target.value)}
                       placeholder="Lower right"
+                      rows={3}
+                      className={chartFieldClass}
+                    />
+                    <textarea
+                      value={block.lowerLeft}
+                      onChange={(event) => updateChartBlock(index, 'lowerLeft', event.target.value)}
+                      placeholder="Lower left"
                       rows={3}
                       className={`${chartFieldClass} border-l-2 border-black`}
                     />
@@ -549,6 +696,177 @@ export default function ConsultationForm({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-slate-950">Procedures</h3>
+                <p className="text-sm text-slate-500">Add every procedure required or completed for this visit.</p>
+              </div>
+              <Button type="button" variant="outline" onClick={addProcedure}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Procedure
+              </Button>
+            </div>
+            <div className="space-y-3">
+              {procedures.map((procedure, index) => {
+                const category = procedure.category || getProcedureCategory(procedure.procedure);
+                const group = PROCEDURE_GROUPS.find((item) => item.category === category) || PROCEDURE_GROUPS[0];
+
+                return (
+                  <div key={index} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[1fr_1fr_0.8fr_auto]">
+                    <div>
+                      <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        Category
+                      </label>
+                      <select
+                        value={category}
+                        onChange={(event) => updateProcedureCategory(index, event.target.value)}
+                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {PROCEDURE_GROUPS.map((groupOption) => (
+                          <option key={groupOption.category} value={groupOption.category}>
+                            {groupOption.category}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        Procedure
+                      </label>
+                      <select
+                        value={procedure.procedure}
+                        onChange={(event) => updateProcedure(index, event.target.value)}
+                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {group.procedures.map((procedureOption) => (
+                          <option key={procedureOption} value={procedureOption}>
+                            {procedureOption}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* <div>
+                      <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        Status
+                      </label>
+                      <select
+                        value={procedure.status || 'completed'}
+                        onChange={(event) =>
+                          updateProcedureStatus(index, event.target.value as ConsultationProcedure['status'])
+                        }
+                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="completed">Completed</option>
+                        <option value="pending">Planned</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </div> */}
+                    <div className="flex items-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeProcedure(index)}
+                        disabled={procedures.length === 1}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-slate-950">Actual Consumables Used</h3>
+                <p className="text-sm text-slate-500">
+                  Optional. Use this when the real materials used differ from the standard background estimate.
+                </p>
+              </div>
+              <Button type="button" variant="outline" onClick={addActualConsumable}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Consumable
+              </Button>
+            </div>
+
+            {actualConsumables.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                No actual consumables recorded. The system will still estimate usage from selected procedures.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {actualConsumables.map((item, index) => (
+                  <div key={index} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[1.4fr_0.7fr_0.8fr_1.4fr_auto]">
+                    <div>
+                      <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        Item
+                      </label>
+                      <Input
+                        value={item.name}
+                        onChange={(event) => updateActualConsumable(index, 'name', event.target.value)}
+                        placeholder="e.g. Gloves"
+                        className="mt-1 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        Qty
+                      </label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={String(item.quantity ?? '')}
+                        onChange={(event) => updateActualConsumable(index, 'quantity', event.target.value)}
+                        className="mt-1 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        Unit
+                      </label>
+                      <Input
+                        value={item.unit || ''}
+                        onChange={(event) => updateActualConsumable(index, 'unit', event.target.value)}
+                        placeholder="pair, each"
+                        className="mt-1 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        Notes
+                      </label>
+                      <Input
+                        value={item.notes || ''}
+                        onChange={(event) => updateActualConsumable(index, 'notes', event.target.value)}
+                        placeholder="Reason or detail"
+                        className="mt-1 bg-white"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeActualConsumable(index)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div> */}
 
           <div>
             <label className="block text-sm font-medium mb-1">Treatment Done *</label>
@@ -648,13 +966,66 @@ export default function ConsultationForm({
 
           <div>
             <label className="block text-sm font-medium mb-1">Next Visit Date</label>
-            <Input
+            {/* <Input
               type="date"
               name="nextVisitDate"
               value={formData.nextVisitDate}
               onChange={handleChange}
+            /> */}
+            <Input
+              type="datetime-local"
+              name="nextVisitDate"
+              value={formData.nextVisitDate}
+              onChange={handleChange}
+              min={minDateTime}
+              required
             />
           </div>
+
+          {aiAssistReady && (
+            <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="rounded-2xl bg-blue-600 p-2 text-white">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-slate-950">AI Assist</h3>
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                      Beta
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <p className="text-sm font-semibold text-slate-900">Summary</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Review complaints, findings, diagnosis, and treatment plan before saving.
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <p className="text-sm font-semibold text-slate-900">Questions to Ask</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Confirm pain duration, triggers, medication use, allergies, and follow-up availability.
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <p className="text-sm font-semibold text-slate-900">Red Flags</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Recheck swelling, fever, spreading infection, uncontrolled bleeding, or severe pain.
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <p className="text-sm font-semibold text-slate-900">Next Actions</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Save the record, schedule the next visit, and review any payment or inventory impact.
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-500">For clinician review only.</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-4 border-t">
             <Button type="submit" disabled={isLoading}>

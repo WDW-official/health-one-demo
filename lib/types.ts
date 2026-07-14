@@ -1,5 +1,6 @@
 // User roles
 import type { ProcedureType } from './procedure-types';
+import type { ConsultationProcedure } from './procedure-types';
 
 export type UserRole = 'admin' | 'doctor';
 
@@ -109,6 +110,94 @@ export interface Appointment {
   updatedAt: Date;
 }
 
+export type ConsultationPaymentStatus = 'paid' | 'unpaid' | 'partially_paid' | 'hmo_pending';
+export type BillingPaymentStatus =
+  | 'Pending Billing'
+  | 'Pending Payment'
+  | 'Part Paid'
+  | 'Paid'
+  | 'HMO Pending'
+  | 'HMO Approved'
+  | 'HMO Paid'
+  | 'Cancelled'
+  | 'Refunded'
+  | 'Outstanding';
+export type PaymentStatus = ConsultationPaymentStatus | BillingPaymentStatus;
+
+export type PaymentMethod =
+  | 'Cash'
+  | 'Bank transfer'
+  | 'POS/card'
+  | 'HMO'
+  | 'Part cash / part HMO'
+  | 'Part payment'
+  | 'Outstanding balance'
+  | 'Other';
+
+export type HmoClaimStatus =
+  | 'Not Applicable'
+  | 'Pending Approval'
+  | 'Approved'
+  | 'Rejected'
+  | 'Submitted'
+  | 'Awaiting Payment'
+  | 'Paid'
+  | 'Part Paid'
+  | 'Disputed';
+
+export interface BillingItem {
+  name: string;
+  category: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  notes?: string;
+}
+
+export interface BillingPayment {
+  id?: string;
+  amountPaid: number;
+  paymentMethod: PaymentMethod;
+  paymentReference?: string;
+  receiptNumber: string;
+  recordedByUserId?: string;
+  recordedByName?: string;
+  paidAt: Date;
+  notes?: string;
+}
+
+export interface Billing {
+  id: string;
+  invoiceNumber: string;
+  clinicName: string;
+  patientId: string;
+  patientName: string;
+  patientMrn?: string;
+  consultationId: string;
+  doctorId: string;
+  doctorName?: string;
+  consultationDate: Date;
+  items: BillingItem[];
+  totalAmount: number;
+  amountPaid: number;
+  balance: number;
+  paymentStatus: BillingPaymentStatus;
+  payments: BillingPayment[];
+  hmoProvider?: string;
+  hmoPlan?: string;
+  hmoApprovalCode?: string;
+  hmoApprovalStatus?: string;
+  hmoAmountCovered: number;
+  hmoPatientAmount: number;
+  hmoOutstandingAmount: number;
+  hmoClaimSubmissionDate?: Date;
+  hmoClaimPaymentDate?: Date;
+  hmoClaimStatus: HmoClaimStatus;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export type CheckInStatus = 'waiting' | 'with_doctor' | 'completed' | 'cancelled';
 
 export interface CheckIn {
@@ -141,14 +230,33 @@ export interface Consultation {
   examination?: string;
   diagnosis: string;
   treatmentPlan?: string;
+  procedures?: ConsultationProcedure[];
+  estimatedConsumables?: ConsultationConsumableUsage[];
+  actualConsumables?: ConsultationConsumableUsage[];
+  consumablesDeductedAt?: Date;
   treatment: string;
   prescription: string;
+  paymentAmount?: number;
+  paymentStatus?: ConsultationPaymentStatus;
   nextVisitDate?: Date;
   notes: string;
   chartBlocks?: ConsultationChartBlock[];
   attachments?: ConsultationAttachment[];
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ConsultationConsumableUsage {
+  name: string;
+  quantity: number;
+  unit: string;
+  procedure?: string;
+  category?: string;
+  source?: 'standard' | 'actual';
+  inventoryItemId?: string;
+  availableQuantity?: number;
+  hasSufficientStock?: boolean;
+  notes?: string;
 }
 
 export interface ConsultationChartBlock {
@@ -199,4 +307,29 @@ export interface SponsoredItem {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// Inventory & Stock Management
+export interface Inventory {
+  id: string;
+  name: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  reorderLevel: number;
+  status: 'in-stock' | 'low-stock' | 'out-of-stock' | 'needs-review';
+  lastUpdated: string;
+}
+
+export interface InventorySummary {
+  totalItems: number;
+  lowStockCount: number;
+  needsReviewCount: number;
+  recentlyUpdatedCount: number;
+}
+
+export interface InventoryActivity {
+  id: string;
+  description: string;
+  timestamp: string;
 }

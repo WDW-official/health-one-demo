@@ -10,7 +10,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Appointment, Patient, Doctor } from '@/lib/types';
 import { getCurrentUser } from '@/lib/auth';
 import { ApiClient } from '@/lib/api-client';
-import { PROCEDURE_TYPES } from '@/lib/procedure-types';
+import { getProcedureCategory, PROCEDURE_GROUPS } from '@/lib/procedure-types';
 import { getErrorMessage } from '@/lib/error-message';
 import { toast } from '@/hooks/use-toast';
 import { AlertCircle } from 'lucide-react';
@@ -34,6 +34,8 @@ export default function AppointmentForm({
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const initialProcedure = appointment?.type || PROCEDURE_GROUPS[0].procedures[0];
+  const [procedureCategory, setProcedureCategory] = useState(getProcedureCategory(initialProcedure));
   const [formData, setFormData] = useState({
     patientId: appointment?.patientId || patientIdParam || '',
     doctorId: appointment?.doctorId || '',
@@ -41,10 +43,15 @@ export default function AppointmentForm({
       ? appointment.dateTime.toISOString().slice(0, 16)
       : '',
     duration: appointment?.duration || 60,
-    type: (appointment?.type || PROCEDURE_TYPES[0]) as Appointment['type'],
+    type: initialProcedure as Appointment['type'],
     status: (appointment?.status || 'scheduled') as Appointment['status'],
     notes: appointment?.notes || '',
   });
+  const [minDateTime] = useState(() =>
+    new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16)
+  );
 
   useEffect(() => {
     const currentUser = getCurrentUser();
@@ -102,6 +109,16 @@ export default function AppointmentForm({
     }));
   };
 
+  const handleProcedureCategoryChange = (category: (typeof PROCEDURE_GROUPS)[number]['category']) => {
+    const group = PROCEDURE_GROUPS.find((item) => item.category === category);
+    const firstProcedure = group?.procedures[0] || formData.type;
+    setProcedureCategory(category);
+    setFormData((prev) => ({
+      ...prev,
+      type: firstProcedure as Appointment['type'],
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -126,6 +143,11 @@ export default function AppointmentForm({
       }
 
       const dateTimeObj = new Date(formData.dateTime);
+      if (dateTimeObj.getTime() < Date.now()) {
+        setError('Appointment date and time cannot be in the past');
+        setIsLoading(false);
+        return;
+      }
 
       if (isEditing && appointment) {
         await ApiClient.updateAppointment(appointment.id, {
@@ -217,6 +239,23 @@ export default function AppointmentForm({
             )}
 
             <div>
+              <label className="block text-sm font-medium mb-1">Procedure Category *</label>
+              <select
+                value={procedureCategory}
+                onChange={(event) =>
+                  handleProcedureCategoryChange(event.target.value as (typeof PROCEDURE_GROUPS)[number]['category'])
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {PROCEDURE_GROUPS.map((group) => (
+                  <option key={group.category} value={group.category}>
+                    {group.category}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium mb-1">Procedure Type *</label>
               <select
                 name="type"
@@ -224,7 +263,7 @@ export default function AppointmentForm({
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {PROCEDURE_TYPES.map((procedureType) => (
+                {(PROCEDURE_GROUPS.find((group) => group.category === procedureCategory)?.procedures || []).map((procedureType) => (
                   <option key={procedureType} value={procedureType}>
                     {procedureType}
                   </option>
@@ -239,6 +278,7 @@ export default function AppointmentForm({
                 name="dateTime"
                 value={formData.dateTime}
                 onChange={handleChange}
+                min={minDateTime}
                 required
               />
             </div>

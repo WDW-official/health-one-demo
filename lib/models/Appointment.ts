@@ -54,7 +54,6 @@ const appointmentSchema = new Schema<IAppointment>(
     },
     type: {
       type: String,
-      enum: PROCEDURE_TYPES,
       required: true,
     },
     status: {

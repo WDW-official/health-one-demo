@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Calendar, Edit2, FileText, History, AlertCircle, Paperclip, Bell, Gift, MessageCircle, ExternalLink } from 'lucide-react';
@@ -96,6 +96,8 @@ export default function PatientDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [documentPreviewUrl, setDocumentPreviewUrl] = useState('');
+  const [activeTab, setActiveTab] = useState('timeline');
+  const touchStartX = useRef<number | null>(null);
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -112,21 +114,11 @@ export default function PatientDetailPage() {
         setError('');
         setCanView(true);
 
-        const currentUser = getCurrentUser();
         const patientRes = await ApiClient.getPatient(patientId);
         const patientData = patientRes?.data || patientRes?.patient || null;
 
         if (!patientData) {
           setError('Patient not found');
-          return;
-        }
-
-        if (
-          currentUser?.role === 'doctor' &&
-          currentUser.doctorId &&
-          patientData.assignedDoctorId !== currentUser.doctorId
-        ) {
-          setCanView(false);
           return;
         }
 
@@ -261,6 +253,13 @@ export default function PatientDetailPage() {
 
   const nextSteps = [
     {
+      label: 'Payment Info',
+      href: consultations[0]?.id
+        ? `/dashboard/consultations/${consultations[0].id}/edit`
+        : `/dashboard/consultations/new?patientId=${patient.id}`,
+      icon: '💳',
+    },
+    {
       label: `Schedule Appointment for ${patient.mrn || patient.id}`,
       href: `/dashboard/appointments/new?patientId=${patient.id}`,
       icon: '📅',
@@ -279,6 +278,33 @@ export default function PatientDetailPage() {
       icon: '✏️',
     });
   }
+
+  const tabOrder = ['timeline', 'overview', 'appointments', 'consultations', 'reminders', 'medical'] as const;
+
+  const handleTabSwipe = (direction: 'left' | 'right') => {
+    const currentIndex = tabOrder.indexOf(activeTab as (typeof tabOrder)[number]);
+
+    if (direction === 'left' && currentIndex < tabOrder.length - 1) {
+      setActiveTab(tabOrder[currentIndex + 1]);
+    } else if (direction === 'right' && currentIndex > 0) {
+      setActiveTab(tabOrder[currentIndex - 1]);
+    }
+  };
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = event.touches[0]?.clientX ?? null;
+  };
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartX.current === null) return;
+
+    const delta = (event.changedTouches[0]?.clientX ?? 0) - touchStartX.current;
+    if (Math.abs(delta) > 50) {
+      handleTabSwipe(delta < 0 ? 'left' : 'right');
+    }
+
+    touchStartX.current = null;
+  };
 
   return (
     <div className="space-y-6">
@@ -332,39 +358,39 @@ export default function PatientDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="md:pt-6">
             <p className="text-sm text-gray-600">MRN</p>
             <p className="text-2xl font-bold mt-1">{patient.mrn || patient.id}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="md:pt-6">
             <p className="text-sm text-gray-600">Age</p>
             <p className="text-2xl font-bold mt-1">{age}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="md:pt-6">
             <p className="text-sm text-gray-600">Gender</p>
             <p className="text-2xl font-bold mt-1 capitalize">{patient.gender}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="md:pt-6">
             <p className="text-sm text-gray-600">Family Status</p>
             <p className="text-2xl font-bold mt-1 capitalize">{patient.familyStatus || 'individual'}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="md:pt-6">
             <p className="text-sm text-gray-600">Assigned Doctor</p>
             <p className="text-lg font-bold mt-1">{patient.assignedDoctorName || 'Not Assigned'}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="md:pt-6">
             <p className="text-sm text-gray-600">Date Registered</p>
             <p className="text-lg font-bold mt-1">
               {patient.createdAt ? new Date(patient.createdAt).toLocaleDateString() : 'Not recorded'}
@@ -372,22 +398,23 @@ export default function PatientDetailPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="md:pt-6">
             <p className="text-sm text-gray-600">Appointments</p>
             <p className="text-2xl font-bold mt-1">{appointments.length}</p>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="timeline" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="appointments">Appointments</TabsTrigger>
-          <TabsTrigger value="consultations">Consultations</TabsTrigger>
-          <TabsTrigger value="reminders">Reminders</TabsTrigger>
-          <TabsTrigger value="medical">Medical Info</TabsTrigger>
-        </TabsList>
+      <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList className="w-full overflow-x-auto pb-1 md:w-fit">
+            <TabsTrigger value="timeline">Timeline</TabsTrigger>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="appointments">Appointments</TabsTrigger>
+            <TabsTrigger value="consultations">Consultations</TabsTrigger>
+            <TabsTrigger value="reminders">Reminders</TabsTrigger>
+            <TabsTrigger value="medical">Medical Info</TabsTrigger>
+          </TabsList>
 
         <TabsContent value="timeline" className="space-y-4">
           <Card>
@@ -637,7 +664,7 @@ export default function PatientDetailPage() {
 
         <TabsContent value="reminders" className="space-y-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="md:flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <Bell className="h-5 w-5 text-teal-700" />
@@ -742,7 +769,8 @@ export default function PatientDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+        </Tabs>
+      </div>
 
       <Dialog open={Boolean(documentPreviewUrl)} onOpenChange={(open) => !open && setDocumentPreviewUrl('')}>
         <DialogContent className="max-h-[90vh] max-w-5xl">

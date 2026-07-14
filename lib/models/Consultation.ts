@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import type { PaymentStatus } from '@/lib/types';
 
 export interface IConsultation extends Document {
   appointmentId?: string;
@@ -10,8 +11,43 @@ export interface IConsultation extends Document {
   examination?: string;
   diagnosis: string;
   treatmentPlan?: string;
+  procedures?: {
+    category: string;
+    procedure: string;
+    price?: number;
+    status?: 'pending' | 'completed' | 'cancelled';
+    updatedBy?: string;
+    updatedByName?: string;
+  }[];
+  estimatedConsumables?: {
+    name: string;
+    quantity: number;
+    unit?: string;
+    procedure?: string;
+    category?: string;
+    source?: 'standard' | 'actual';
+    inventoryItemId?: string;
+    availableQuantity?: number;
+    hasSufficientStock?: boolean;
+    notes?: string;
+  }[];
+  actualConsumables?: {
+    name: string;
+    quantity: number;
+    unit?: string;
+    procedure?: string;
+    category?: string;
+    source?: 'standard' | 'actual';
+    inventoryItemId?: string;
+    availableQuantity?: number;
+    hasSufficientStock?: boolean;
+    notes?: string;
+  }[];
+  consumablesDeductedAt?: Date;
   treatment: string;
   prescriptions: string;
+  paymentAmount?: number;
+  paymentStatus?: PaymentStatus;
   followUpDate?: string;
   notes: string;
   chartBlocks?: {
@@ -71,6 +107,62 @@ const consultationSchema = new Schema<IConsultation>(
       type: String,
       default: '',
     },
+    procedures: {
+      type: [
+        {
+          category: { type: String, default: '' },
+          procedure: { type: String, default: '' },
+          price: { type: Number, min: 0 },
+          status: {
+            type: String,
+            enum: ['pending', 'completed', 'cancelled'],
+            default: 'pending',
+          },
+          updatedBy: { type: String, default: '' },
+          updatedByName: { type: String, default: '' },
+        },
+      ],
+      default: [],
+    },
+    estimatedConsumables: {
+      type: [
+        {
+          name: { type: String, required: true, trim: true },
+          quantity: { type: Number, required: true, min: 0 },
+          unit: { type: String, default: '' },
+          procedure: { type: String, default: '' },
+          category: { type: String, default: '' },
+          source: { type: String, enum: ['standard', 'actual'], default: 'standard' },
+          inventoryItemId: { type: String, default: '' },
+          availableQuantity: { type: Number, default: null },
+          hasSufficientStock: { type: Boolean, default: null },
+          notes: { type: String, default: '' },
+        },
+      ],
+      default: [],
+    },
+    actualConsumables: {
+      type: [
+        {
+          name: { type: String, required: true, trim: true },
+          quantity: { type: Number, required: true, min: 0 },
+          unit: { type: String, default: '' },
+          procedure: { type: String, default: '' },
+          category: { type: String, default: '' },
+          source: { type: String, enum: ['standard', 'actual'], default: 'actual' },
+          inventoryItemId: { type: String, default: '' },
+          availableQuantity: { type: Number, default: null },
+          hasSufficientStock: { type: Boolean, default: null },
+          notes: { type: String, default: '' },
+        },
+      ],
+      default: [],
+    },
+    consumablesDeductedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     treatment: {
       type: String,
       required: [true, 'Treatment is required'],
@@ -78,6 +170,17 @@ const consultationSchema = new Schema<IConsultation>(
     prescriptions: {
       type: String,
       default: '',
+    },
+    paymentAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['paid', 'unpaid', 'partially_paid', 'hmo_pending'],
+      default: 'unpaid',
+      index: true,
     },
     followUpDate: {
       type: String,

@@ -159,7 +159,13 @@ export default function DoctorsPage() {
                   </TableRow>
                 ) : (
                   doctors.map((doctor) => (
-                    <TableRow key={doctor.id}>
+                    <TableRow
+                      key={doctor.id}
+                      className="cursor-pointer"
+                      onClick={() => {
+                        window.location.href = `/dashboard/doctors/${doctor.id}`;
+                      }}
+                    >
                       <TableCell className="font-medium">
                         <Link href={`/dashboard/doctors/${doctor.id}`} className="text-blue-700 hover:underline">
                           {doctor.name}
@@ -191,7 +197,7 @@ export default function DoctorsPage() {
                           {doctor.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(event) => event.stopPropagation()}>
                         {canManageDoctors && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>

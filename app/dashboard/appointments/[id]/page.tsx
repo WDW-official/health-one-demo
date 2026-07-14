@@ -190,8 +190,8 @@ export default function AppointmentDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center ">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex items-center">
           <Button
             variant="ghost"
             size="sm"
@@ -201,9 +201,11 @@ export default function AppointmentDetailPage() {
             <ChevronLeft className="h-6 w-6 text-gray-700" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Appointment {appointmentLabel}
+            <h1 className="md:text-3xl text-2xl font-bold text-gray-900">
+              {appointmentLabel}
             </h1>
+          </div>
+        </div>
             <p className="text-gray-600 mt-1">
               {appointment.dateTime.toLocaleDateString()} at{' '}
               {appointment.dateTime.toLocaleTimeString([], {
@@ -211,9 +213,7 @@ export default function AppointmentDetailPage() {
                 minute: '2-digit',
               })}
             </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 xl:justify-end">
           {getCurrentUser()?.role === 'admin' && (
             <>
               <Link href={`/dashboard/appointments/${appointment.id}/edit?mode=reschedule`}>
@@ -262,7 +262,7 @@ export default function AppointmentDetailPage() {
       </div>
 
       {/* Quick Info */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-gray-600">Patient MRN</p>
@@ -379,17 +379,17 @@ export default function AppointmentDetailPage() {
 
                 <div className="md:col-span-2">
                   <Card className="border-slate-200 bg-slate-50/70">
-                    <CardHeader className="flex flex-row items-center justify-between">
+                    <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-base">
                         <Bell className="h-4 w-4 text-teal-700" />
                         Appointment Reminders
                       </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
                       <Button onClick={handleCreateReminder} disabled={isCreatingReminder} size="sm">
                         <MessageCircle className="mr-2 h-4 w-4" />
                         {isCreatingReminder ? 'Creating...' : 'Create WhatsApp reminder'}
                       </Button>
-                    </CardHeader>
-                    <CardContent>
                       {reminders.length === 0 ? (
                         <p className="text-sm text-gray-500">No reminders created for this appointment yet.</p>
                       ) : (

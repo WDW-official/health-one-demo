@@ -34,6 +34,11 @@ function buildAppointmentReminder(appointment: any, patient: any) {
   };
 }
 
+function isPastAppointmentDate(value: string | Date) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) || date.getTime() < Date.now();
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -84,6 +89,13 @@ export async function PUT(
     }
 
     const body = await request.json();
+
+    if (body.dateTime && isPastAppointmentDate(body.dateTime)) {
+      return NextResponse.json(
+        { error: 'Appointment date and time cannot be in the past' },
+        { status: 400 }
+      );
+    }
 
     const appointment = await Appointment.findByIdAndUpdate(
       id,

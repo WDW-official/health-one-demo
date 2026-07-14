@@ -38,6 +38,11 @@ function buildAppointmentReminder(appointment: any, patient: any) {
   };
 }
 
+function isPastAppointmentDate(value: string | Date) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) || date.getTime() < Date.now();
+}
+
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
@@ -94,6 +99,13 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    if (isPastAppointmentDate(body.dateTime)) {
+      return NextResponse.json(
+        { error: 'Appointment date and time cannot be in the past' },
+        { status: 400 }
+      );
     }
 
     // Get doctor and patient names for caching

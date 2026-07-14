@@ -19,6 +19,8 @@ import {
   UserPlus,
   MessageCircle,
   ClipboardCheck,
+  BarChart3,
+  CreditCard,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -303,6 +305,18 @@ export default function DashboardLayout({
       icon: <FileText className="w-5 h-5" />,
     },
     {
+      href: '/dashboard/billing',
+      label: 'Billing',
+      icon: <CreditCard className="w-5 h-5" />,
+      roles: ['admin'],
+    },
+    {
+      href: '/dashboard/reports',
+      label: 'Reports',
+      icon: <BarChart3 className="w-5 h-5" />,
+      roles: ['admin'],
+    },
+    {
       href: '/dashboard/chat',
       label: 'Chat',
       icon: <MessageCircle className="w-5 h-5" />,
@@ -344,14 +358,14 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(124,199,184,0.12),transparent_25%),linear-gradient(180deg,rgba(248,252,251,1),rgba(240,247,246,1))]">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(124,199,184,0.12),transparent_25%),linear-gradient(180deg,rgba(248,252,251,1),rgba(240,247,246,1))] print:bg-white">
       {/* Sidebar */}
       <aside
         className={`${
           sidebarExpanded ? 'w-72' : 'w-24'
         } text-white transition-all duration-300 flex flex-col shadow-[0_24px_80px_-28px_rgba(8,47,73,0.8)] ${
           isMobile && !sidebarOpen ? 'hidden' : ''
-        } fixed left-0 top-0 z-50 h-screen bg-[#275cc2]`}
+        } fixed left-0 top-0 z-50 h-screen bg-[#275cc2] print:hidden`}
       >
         {/* Logo */}
         <div className="border-b border-white/10 p-6">
@@ -422,9 +436,9 @@ export default function DashboardLayout({
       </aside>
 
       {/* Main Content */}
-      <div className={`flex min-h-screen flex-col ${sidebarWidthClass}`}>
+      <div className={`flex min-h-screen flex-col print:block print:min-h-0 print:pl-0 ${sidebarWidthClass}`}>
         {/* Top Header */}
-        <header className={`fixed left-0 right-0 top-0 z-40 flex items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 py-4 backdrop-blur-xl md:justify-end md:px-6 ${sidebarWidthClass}`}>
+        <header className={`fixed left-0 right-0 top-0 z-40 flex items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 py-4 backdrop-blur-xl md:justify-end md:px-6 print:hidden ${sidebarWidthClass}`}>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"
@@ -458,10 +472,10 @@ export default function DashboardLayout({
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-4 pt-24 md:p-6 md:pt-24">
+        <main className="flex-1 overflow-auto p-4 pt-24 print:block print:overflow-visible print:p-0 md:p-6 md:pt-24">
           {isMobile && sidebarOpen && (
             <div
-              className="fixed inset-0 bg-black/50 z-40"
+              className="fixed inset-0 bg-black/50 z-40 print:hidden"
               onClick={() => setSidebarOpen(false)}
             />
           )}
