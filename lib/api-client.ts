@@ -583,6 +583,13 @@ export class ApiClient {
     return this.request('/consultations/upcoming-followups');
   }
 
+  static async suggestConsultationDiagnosis(data: any) {
+    return this.request('/consultations/ai-diagnosis', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Billing endpoints
   static async getBilling(params: ListParams & { hmoProvider?: string; hmoClaimStatus?: string } = {}) {
     const response = await this.request<any>(`/billing${buildQuery(params)}`);

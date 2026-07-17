@@ -34,6 +34,12 @@ type ConsultationChartBlock = {
   lowerRight: string;
 };
 
+type DiagnosisSuggestion = {
+  diagnosis: string;
+  reason: string;
+  confidence: 'low' | 'medium' | 'high';
+};
+
 const emptyChartBlock: ConsultationChartBlock = {
   upperLeft: '',
   upperRight: '',
@@ -95,6 +101,9 @@ export default function ConsultationForm({
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSuggestingDiagnosis, setIsSuggestingDiagnosis] = useState(false);
+  const [diagnosisSuggestions, setDiagnosisSuggestions] = useState<DiagnosisSuggestion[]>([]);
+  const [aiDisclaimer, setAiDisclaimer] = useState('');
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     patientId: consultation?.patientId || patientIdParam || '',
@@ -323,9 +332,95 @@ export default function ConsultationForm({
   const aiAssistReady = [
     formData.presentingComplaints,
     formData.examination,
-    formData.diagnosis,
     formData.treatmentPlan,
+    ...chartBlocks.flatMap((block) => Object.values(block)),
+    ...procedures.map((item) => item.procedure || ''),
   ].some((value) => value.trim().length > 0);
+
+  const getChartNotes = () =>
+    getFilledChartBlocks()
+      .map((block, index) =>
+        [
+          `Chart ${index + 1}:`,
+          block.upperRight && `Upper right: ${block.upperRight}`,
+          block.upperLeft && `Upper left: ${block.upperLeft}`,
+          block.lowerRight && `Lower right: ${block.lowerRight}`,
+          block.lowerLeft && `Lower left: ${block.lowerLeft}`,
+        ]
+          .filter(Boolean)
+          .join(' ')
+      )
+      .join('\n');
+
+  const getPatientContext = () => {
+    const patient = patients.find((item) => item.id === formData.patientId);
+    if (!patient) return '';
+
+    return [
+      patient.gender && `Gender: ${patient.gender}`,
+      patient.dateOfBirth && `DOB: ${new Date(patient.dateOfBirth).toLocaleDateString()}`,
+      patient.medicalHistory && `Medical history: ${patient.medicalHistory}`,
+      patient.allergies && `Allergies: ${patient.allergies}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  };
+
+  const suggestDiagnosis = async () => {
+    if (!aiAssistReady) {
+      toast({
+        title: 'Add clinical notes first',
+        description: 'Enter complaints, examination findings, chart notes, or procedures before requesting suggestions.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsSuggestingDiagnosis(true);
+      setDiagnosisSuggestions([]);
+      setAiDisclaimer('');
+
+      const response = await ApiClient.suggestConsultationDiagnosis({
+        presentingComplaints: formData.presentingComplaints,
+        examination: formData.examination,
+        chartNotes: getChartNotes(),
+        treatmentPlan: formData.treatmentPlan,
+        procedures: getFilledProcedures(),
+        patientContext: getPatientContext(),
+      });
+
+      const suggestions = response?.data?.suggestions || response?.suggestions || [];
+      setDiagnosisSuggestions(suggestions);
+      setAiDisclaimer(response?.data?.disclaimer || response?.disclaimer || '');
+
+      if (suggestions.length === 0) {
+        toast({
+          title: 'No suggestions returned',
+          description: 'Add more clinical details and try again.',
+        });
+      }
+    } catch (suggestionError) {
+      const message = getErrorMessage(suggestionError, 'Could not generate diagnosis suggestions.');
+      toast({ title: 'AI suggestion failed', description: message, variant: 'destructive' });
+    } finally {
+      setIsSuggestingDiagnosis(false);
+    }
+  };
+
+  const applyDiagnosisSuggestion = (suggestion: DiagnosisSuggestion) => {
+    setFormData((prev) => ({
+      ...prev,
+      diagnosis: suggestion.diagnosis,
+    }));
+  };
+
+  const appendDiagnosisSuggestion = (suggestion: DiagnosisSuggestion) => {
+    setFormData((prev) => ({
+      ...prev,
+      diagnosis: [prev.diagnosis.trim(), suggestion.diagnosis].filter(Boolean).join('\n'),
+    }));
+  };
 
   const uploadSingleAttachment = (file: File, progressCallback?: (percent: number) => void) => {
     return new Promise<ConsultationAttachment>((resolve, reject) => {
@@ -673,7 +768,7 @@ export default function ConsultationForm({
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Impression/Diagnosis *</label>
+            <label className="mb-1 block text-sm font-medium">Impression/Diagnosis *</label>
             <textarea
               name="diagnosis"
               value={formData.diagnosis}
@@ -683,6 +778,90 @@ export default function ConsultationForm({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
+
+            <div className="mt-3 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 rounded-2xl bg-blue-600 p-2 text-white">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="whitespace-nowrap font-semibold text-slate-950">AI Assist</h3>
+                        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                          Beta
+                        </span>
+                      </div>
+                      <span className="w-fit rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                        Clinician review required
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={suggestDiagnosis}
+                  disabled={!aiAssistReady || isSuggestingDiagnosis || isLoading}
+                  className="w-full sm:w-auto"
+                >
+                  {isSuggestingDiagnosis ? (
+                    <>
+                      <Spinner className="mr-2 size-4" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Suggest Diagnosis
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="mt-3 text-sm text-slate-600">
+                Generate possible impression/diagnosis options from complaints, examination, chart notes, and procedures.
+              </p>
+
+              {!aiAssistReady && (
+                <p className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                  Add complaints, examination findings, chart notes, or procedures to enable AI suggestions.
+                </p>
+              )}
+
+              {diagnosisSuggestions.length > 0 && (
+                <div className="mt-4 grid grid-cols-2 gap-4space-y-2">
+                  {diagnosisSuggestions.map((suggestion, index) => (
+                    <div key={`${suggestion.diagnosis}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-950">{suggestion.diagnosis}</p>
+                          <p className="mt-1 text-sm text-slate-600">{suggestion.reason}</p>
+                          <span className="mt-2 inline-flex rounded-full bg-white px-2 py-0.5 text-xs font-semibold capitalize text-slate-600 ring-1 ring-slate-200">
+                            {suggestion.confidence} confidence
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          <Button type="button" size="sm" onClick={() => applyDiagnosisSuggestion(suggestion)}>
+                            Use
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => appendDiagnosisSuggestion(suggestion)}
+                          >
+                            Append
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {aiDisclaimer && <p className="pt-1 text-xs text-slate-500">{aiDisclaimer}</p>}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
@@ -896,7 +1075,7 @@ export default function ConsultationForm({
           <div>
             <label className="mb-2 block text-sm font-medium">Record Attachments</label>
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-4">
-              <div className="flex items-center gap-3">
+              <div className="md:flex items-center gap-3">
                 <div className="rounded-xl bg-teal-50 p-2 text-teal-700">
                   <FileUp className="h-5 w-5" />
                 </div>
@@ -981,51 +1160,6 @@ export default function ConsultationForm({
               required
             />
           </div>
-
-          {aiAssistReady && (
-            <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="rounded-2xl bg-blue-600 p-2 text-white">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-slate-950">AI Assist</h3>
-                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                      Beta
-                    </span>
-                  </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <div className="rounded-xl border border-slate-200 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Summary</p>
-                      <p className="mt-1 text-sm text-slate-600">
-                        Review complaints, findings, diagnosis, and treatment plan before saving.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Questions to Ask</p>
-                      <p className="mt-1 text-sm text-slate-600">
-                        Confirm pain duration, triggers, medication use, allergies, and follow-up availability.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Red Flags</p>
-                      <p className="mt-1 text-sm text-slate-600">
-                        Recheck swelling, fever, spreading infection, uncontrolled bleeding, or severe pain.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 p-3">
-                      <p className="text-sm font-semibold text-slate-900">Next Actions</p>
-                      <p className="mt-1 text-sm text-slate-600">
-                        Save the record, schedule the next visit, and review any payment or inventory impact.
-                      </p>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-xs text-slate-500">For clinician review only.</p>
-                </div>
-              </div>
-            </div>
-          )}
 
           <div className="flex gap-3 pt-4 border-t">
             <Button type="submit" disabled={isLoading}>
