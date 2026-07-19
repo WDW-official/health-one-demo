@@ -128,7 +128,7 @@ export default function BillingPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden">
       <div className="md:flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Billing & Payments</h1>
@@ -136,7 +136,7 @@ export default function BillingPage() {
         </div>
       </div>
 
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardContent className="pt-6">
           <div className="relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
@@ -150,8 +150,8 @@ export default function BillingPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="min-w-0 overflow-hidden">
+        <CardContent className="min-w-0 pt-6">
           <SearchableSelect
             value={patientFilter}
             onValueChange={(value) => setPatientFilter(value)}
@@ -174,28 +174,28 @@ export default function BillingPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="min-w-0 max-w-full overflow-hidden">
         <CardHeader>
           <CardTitle>Consultations for Billing</CardTitle>
           <CardDescription>
             {sortedConsultations.length} consultation{sortedConsultations.length !== 1 ? 's' : ''}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0">
           {isLoading ? (
             <LoadingState label="Loading consultations" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="w-full max-w-full overflow-x-auto">
+              <table className="w-full table-fixed text-xs sm:table-auto sm:text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium">MRN</th>
-                    <th className="text-left py-3 px-4 font-medium">Patient</th>
-                    <th className="text-left py-3 px-4 font-medium">Diagnosis</th>
-                    <th className="text-left py-3 px-4 font-medium">Date</th>
-                    <th className="text-left py-3 px-4 font-medium">Amount</th>
-                    <th className="text-left py-3 px-4 font-medium">Status</th>
-                    <th className="text-right py-3 px-4 font-medium">Actions</th>
+                    <th className="w-[70px] px-2 py-3 text-left font-medium sm:w-auto sm:px-4">MRN</th>
+                    <th className="px-2 py-3 text-left font-medium sm:px-4">Patient</th>
+                    <th className="hidden px-4 py-3 text-left font-medium md:table-cell">Diagnosis</th>
+                    <th className="hidden px-4 py-3 text-left font-medium lg:table-cell">Date</th>
+                    <th className="hidden px-4 py-3 text-left font-medium sm:table-cell">Amount</th>
+                    <th className="hidden px-4 py-3 text-left font-medium md:table-cell">Status</th>
+                    <th className="w-[52px] px-2 py-3 text-right font-medium sm:w-auto sm:px-4">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -218,29 +218,37 @@ export default function BillingPage() {
                       const patientMrn = patient?.mrn || consultation.patientId;
                       return (
                         <tr key={consultation.id} className="border-b hover:bg-gray-50 transition-colors">
-                          <td className="py-3 px-4">
-                            <Link href={`/dashboard/patients/${consultation.patientId}`} className="font-semibold text-gray-900 hover:text-blue-600 hover:underline">
+                          <td className="whitespace-nowrap px-2 py-3 sm:px-4">
+                            <Link href={`/dashboard/patients/${consultation.patientId}`} className="block max-w-[60px] truncate font-semibold text-gray-900 hover:text-blue-600 hover:underline sm:max-w-none">
                               {patientMrn}
                             </Link>
                           </td>
-                          <td className="py-3 px-4">
-                            <Link href={`/dashboard/patients/${consultation.patientId}`} className="group inline-block">
+                          <td className="min-w-0 px-2 py-3 sm:px-4">
+                            <Link href={`/dashboard/patients/${consultation.patientId}`} className="group block min-w-0">
                               <span className="block font-medium text-gray-900 group-hover:text-blue-600 group-hover:underline truncate">
                                 {patient ? `${patient.firstName} ${patient.lastName}` : consultation.patientName || 'Patient'}
                               </span>
                             </Link>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5 md:hidden">
+                              <span className="text-[11px] font-semibold text-gray-900">
+                                {formatNaira(billedAmount)}
+                              </span>
+                              <span className={`inline-flex max-w-full items-center truncate rounded-full border px-2 py-0.5 text-[10px] font-semibold ${paymentStatusClass(paymentStatus)}`}>
+                                {paymentStatusLabel(paymentStatus)}
+                              </span>
+                            </div>
                           </td>
-                          <td className="py-3 px-4 text-gray-600 max-w-xs truncate">{consultation.diagnosis}</td>
-                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{new Date(consultation.createdAt).toLocaleString()}</td>
-                          <td className="py-3 px-4 font-semibold text-gray-900">
+                          <td className="hidden max-w-xs truncate px-4 py-3 text-gray-600 md:table-cell">{consultation.diagnosis}</td>
+                          <td className="hidden whitespace-nowrap px-4 py-3 text-gray-600 lg:table-cell">{new Date(consultation.createdAt).toLocaleString()}</td>
+                          <td className="hidden whitespace-nowrap px-4 py-3 font-semibold text-gray-900 sm:table-cell">
                             {formatNaira(billedAmount)}
                           </td>
-                          <td className="py-3 px-4">
+                          <td className="hidden whitespace-nowrap px-4 py-3 md:table-cell">
                             <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${paymentStatusClass(paymentStatus)}`}>
                               {paymentStatusLabel(paymentStatus)}
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-right">
+                          <td className="px-2 py-3 text-right sm:px-4">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="rounded-full">

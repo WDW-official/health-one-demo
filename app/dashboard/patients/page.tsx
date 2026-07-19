@@ -312,7 +312,7 @@ export default function PatientsPage() {
   const canDeletePatients = Boolean(user?.role === 'admin' && user.isSuperAdmin);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
@@ -348,7 +348,7 @@ export default function PatientsPage() {
         )}
       </div>
 
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardContent className="pt-6">
           <div className="relative">
             <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
@@ -640,28 +640,28 @@ export default function PatientsPage() {
         </Dialog>
       )}
 
-      <Card>
+      <Card className="min-w-0 max-w-full overflow-hidden">
         <CardHeader>
           <CardTitle>Patient Records</CardTitle>
           <CardDescription>
             {total} patient{total !== 1 ? 's' : ''}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0">
           {isLoading ? (
             <LoadingState label="Loading patients" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="w-full max-w-full overflow-x-auto">
+              <table className="w-full table-fixed text-xs sm:table-auto sm:text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium">MRN</th>
-                    <th className="text-left py-3 px-4 font-medium">Name</th>
-                    <th className="text-left py-3 px-4 font-medium">Email</th>
-                    <th className="text-left py-3 px-4 font-medium">Phone</th>
-                    <th className="text-left py-3 px-4 font-medium">DOB</th>
-                    <th className="text-left py-3 px-4 font-medium">Registered</th>
-                    <th className="text-right py-3 px-4 font-medium">Actions</th>
+                    <th className="w-[70px] px-2 py-3 text-left font-medium sm:w-auto sm:px-4">MRN</th>
+                    <th className="px-2 py-3 text-left font-medium sm:px-4">Name</th>
+                    <th className="hidden px-4 py-3 text-left font-medium md:table-cell">Email</th>
+                    <th className="hidden px-4 py-3 text-left font-medium lg:table-cell">Phone</th>
+                    <th className="hidden px-4 py-3 text-left font-medium sm:table-cell">DOB</th>
+                    <th className="hidden px-4 py-3 text-left font-medium lg:table-cell">Registered</th>
+                    <th className="w-[52px] px-2 py-3 text-right font-medium sm:w-auto sm:px-4">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -674,36 +674,36 @@ export default function PatientsPage() {
                   ) : (
                     patients.map((patient) => (
                       <tr key={patient.id} className="border-b hover:bg-gray-50 transition-colors">
-                        <td className="py-3 px-4">
+                        <td className="whitespace-nowrap px-2 py-3 sm:px-4">
                           <Link
                             href={`/dashboard/patients/${patient.id}`}
-                            className="font-semibold text-gray-900 hover:text-blue-600 hover:underline"
+                            className="block max-w-[60px] truncate font-semibold text-gray-900 hover:text-blue-600 hover:underline sm:max-w-none"
                           >
                             {patient.mrn || patient.id}
                           </Link>
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="min-w-0 px-2 py-3 sm:px-4">
                           <Link
                             href={`/dashboard/patients/${patient.id}`}
-                            className="group inline-block"
+                            className="group block min-w-0"
                           >
-                            <span className="block font-medium text-gray-900 group-hover:text-blue-600 group-hover:underline">
+                            <span className="block truncate font-medium text-gray-900 group-hover:text-blue-600 group-hover:underline">
                               {patient.firstName} {patient.lastName}
                             </span>
                           </Link>
-                          <p className="text-xs font-semibold text-teal-700">
+                          <p className="truncate text-[11px] font-semibold text-teal-700 sm:text-xs">
                             MRN {patient.mrn || patient.id}
                           </p>
                         </td>
-                        <td className="py-3 px-4 text-gray-600">{patient.email}</td>
-                        <td className="py-3 px-4 text-gray-600">{patient.phone}</td>
-                        <td className="py-3 px-4 text-gray-600">
+                        <td className="hidden max-w-[220px] truncate px-4 py-3 text-gray-600 md:table-cell">{patient.email}</td>
+                        <td className="hidden whitespace-nowrap px-4 py-3 text-gray-600 lg:table-cell">{patient.phone}</td>
+                        <td className="hidden whitespace-nowrap px-4 py-3 text-gray-600 sm:table-cell">
                           {new Date(patient.dateOfBirth).toLocaleDateString()}
                         </td>
-                        <td className="py-3 px-4 text-gray-600">
+                        <td className="hidden whitespace-nowrap px-4 py-3 text-gray-600 lg:table-cell">
                           {patient.createdAt ? new Date(patient.createdAt).toLocaleDateString() : 'Not recorded'}
                         </td>
-                        <td className="py-3 px-4 text-right">
+                        <td className="px-2 py-3 text-right sm:px-4">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="rounded-full">

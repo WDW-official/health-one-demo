@@ -521,8 +521,8 @@ export class ApiClient {
     const response = await this.request<any>(`/consultations${buildQuery(params)}`);
     return {
       ...response,
-      data: normalizeArray(response?.data || []),
-      consultations: normalizeArray(response?.consultations || []),
+      data: normalizeArray(response?.data || []).map(normalizeConsultation),
+      consultations: normalizeArray(response?.consultations || []).map(normalizeConsultation),
     };
   }
 
@@ -576,7 +576,14 @@ export class ApiClient {
   }
 
   static async getConsultationByAppointment(appointmentId: string) {
-    return this.request(`/consultations/appointment/${appointmentId}`);
+    const response = await this.request<any>(`/consultations/appointment/${appointmentId}`);
+    const rawConsultation = response?.consultation ?? response?.data ?? null;
+    const consultation = rawConsultation ? normalizeConsultation(rawConsultation) : null;
+    return {
+      ...response,
+      data: consultation,
+      consultation,
+    };
   }
 
   static async getUpcomingFollowUps() {

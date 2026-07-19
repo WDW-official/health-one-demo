@@ -50,7 +50,7 @@ export default function DashboardLayout({
   const isMobile = useIsMobile();
   const [user, setUser] = useState<User | null>(() => getCurrentUser());
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioUnlockedRef = useRef(false);
@@ -358,7 +358,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(124,199,184,0.12),transparent_25%),linear-gradient(180deg,rgba(248,252,251,1),rgba(240,247,246,1))] print:bg-white">
+    <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(124,199,184,0.12),transparent_25%),linear-gradient(180deg,rgba(248,252,251,1),rgba(240,247,246,1))] print:bg-white">
       {/* Sidebar */}
       <aside
         className={`${
@@ -386,6 +386,11 @@ export default function DashboardLayout({
             <Link
               key={link.href}
               href={link.href}
+              onClick={() => {
+                if (isMobile) {
+                  setSidebarOpen(false);
+                }
+              }}
               className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${
                 isActive(link.href)
                 ? 'bg-white/20 text-white shadow-lg shadow-black/10 ring-1 ring-white/20'
@@ -435,8 +440,17 @@ export default function DashboardLayout({
         </div>
       </aside>
 
+      {isMobile && sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          className="fixed inset-0 z-[45] bg-black/50 print:hidden md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Main Content */}
-      <div className={`flex min-h-screen flex-col print:block print:min-h-0 print:pl-0 ${sidebarWidthClass}`}>
+      <div className={`flex min-h-screen min-w-0 flex-col print:block print:min-h-0 print:pl-0 ${sidebarWidthClass}`}>
         {/* Top Header */}
         <header className={`fixed left-0 right-0 top-0 z-40 flex items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 py-4 backdrop-blur-xl md:justify-end md:px-6 print:hidden ${sidebarWidthClass}`}>
           <button
@@ -472,13 +486,7 @@ export default function DashboardLayout({
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-4 pt-24 print:block print:overflow-visible print:p-0 md:p-6 md:pt-24">
-          {isMobile && sidebarOpen && (
-            <div
-              className="fixed inset-0 bg-black/50 z-40 print:hidden"
-              onClick={() => setSidebarOpen(false)}
-            />
-          )}
+        <main className="min-w-0 flex-1 overflow-auto p-4 pt-24 print:block print:overflow-visible print:p-0 md:p-6 md:pt-24">
           {children}
         </main>
       </div>

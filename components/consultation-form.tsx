@@ -831,7 +831,7 @@ export default function ConsultationForm({
               )}
 
               {diagnosisSuggestions.length > 0 && (
-                <div className="mt-4 grid grid-cols-2 gap-4space-y-2">
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:gap-4 space-y-2">
                   {diagnosisSuggestions.map((suggestion, index) => (
                     <div key={`${suggestion.diagnosis}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
