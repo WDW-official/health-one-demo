@@ -1,6 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { getNextPatientMrnForHospital } from '@/lib/patient-mrn';
 
 export interface IPatient extends Document {
+  hospitalId?: string | null;
   mrn: string;
   firstName: string;
   lastName: string;
@@ -31,6 +33,11 @@ export interface IPatient extends Document {
 
 const patientSchema = new Schema<IPatient>(
   {
+    hospitalId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     mrn: {
       type: String,
       unique: true,
@@ -142,25 +149,17 @@ const patientSchema = new Schema<IPatient>(
 );
 
 // Text index for fast search
+patientSchema.index({ hospitalId: 1, mrn: 1 });
+patientSchema.index({ hospitalId: 1, assignedDoctorId: 1 });
 patientSchema.index({ mrn: 'text', firstName: 'text', lastName: 'text', email: 'text', phone: 'text' });
 
-async function getNextPatientMrn() {
-  const patients = await mongoose.models.Patient.find({ mrn: /^ARC\d+$/i })
-    .select('mrn')
-    .lean();
-
-  const highestNumber = patients.reduce((highest: number, patient: any) => {
-    const match = String(patient.mrn || '').match(/^ARC(\d+)$/i);
-    const mrnNumber = match ? Number(match[1]) : 0;
-    return Number.isFinite(mrnNumber) && mrnNumber > highest ? mrnNumber : highest;
-  }, 0);
-
-  return `ARC${highestNumber + 1}`;
+async function getNextPatientMrn(hospitalId?: string | null) {
+  return getNextPatientMrnForHospital(mongoose.models.Patient, hospitalId || null);
 }
 
 patientSchema.pre('validate', async function () {
   if (!this.mrn) {
-    this.mrn = await getNextPatientMrn();
+    this.mrn = await getNextPatientMrn(this.hospitalId);
   }
 });
 

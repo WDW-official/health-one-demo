@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import ChatMessage from '@/lib/models/ChatMessage';
 import User from '@/lib/models/User';
-import { getPagination, getRequestUser } from '../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser } from '../_lib/request-auth';
 import { jsonCreated, jsonError, jsonOk } from '../_lib/response';
 
 function normalizeMessage(doc: any) {
@@ -35,17 +35,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Choose another user to chat with' }, { status: 400 });
     }
 
-    const recipient = await User.findOne({ _id: recipientId, isActive: { $ne: false } }).select('_id').lean();
+    const recipient = await User.findOne(buildHospitalQuery(user, { _id: recipientId, isActive: { $ne: false } }))
+      .select('_id')
+      .lean();
     if (!recipient) {
       return NextResponse.json({ error: 'Recipient not found' }, { status: 404 });
     }
 
-    const query = {
+    const query = buildHospitalQuery(user, {
       $or: [
         { senderId: user.id, recipientId },
         { senderId: recipientId, recipientId: user.id },
       ],
-    };
+    });
 
     const [messages, total] = await Promise.all([
       ChatMessage.find(query)
@@ -56,6 +58,7 @@ export async function GET(request: NextRequest) {
       ChatMessage.countDocuments(query),
       ChatMessage.updateMany(
         {
+          hospitalId: user.hospitalId || null,
           senderId: recipientId,
           recipientId: user.id,
           readAt: null,
@@ -105,7 +108,7 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
-    const recipient = await User.findOne({ _id: recipientId, isActive: { $ne: false } })
+    const recipient = await User.findOne(buildHospitalQuery(user, { _id: recipientId, isActive: { $ne: false } }))
       .select('name')
       .lean();
 
@@ -114,6 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     const chatMessage = await ChatMessage.create({
+      hospitalId: user.hospitalId || null,
       senderId: user.id,
       senderName: user.name,
       senderRole: user.role === 'doctor' ? 'doctor' : 'admin',

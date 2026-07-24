@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export type CheckInStatus = 'waiting' | 'with_doctor' | 'completed' | 'cancelled';
 
 export interface ICheckIn extends Document {
+  hospitalId?: string | null;
   patientId: string;
   patientName: string;
   patientMrn?: string;
@@ -21,6 +22,11 @@ export interface ICheckIn extends Document {
 
 const checkInSchema = new Schema<ICheckIn>(
   {
+    hospitalId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     patientId: {
       type: String,
       required: [true, 'Patient ID is required'],
@@ -90,5 +96,6 @@ const checkInSchema = new Schema<ICheckIn>(
 checkInSchema.index({ doctorId: 1, checkedInAt: -1 });
 checkInSchema.index({ checkedInAt: -1, status: 1 });
 checkInSchema.index({ patientId: 1, checkedInAt: -1 });
+checkInSchema.index({ hospitalId: 1, checkedInAt: -1, status: 1 });
 
 export default mongoose.models.CheckIn || mongoose.model<ICheckIn>('CheckIn', checkInSchema);

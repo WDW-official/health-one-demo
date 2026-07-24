@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import { connectDB } from '@/lib/mongodb';
 import Billing from '@/lib/models/Billing';
 import { buildReceiptNumber, calculateBillingStatus, roundMoney } from '@/lib/billing-utils';
-import { getRequestUser } from '../../../_lib/request-auth';
+import { buildHospitalQuery, getRequestUser } from '../../../_lib/request-auth';
 import { jsonError, jsonOk } from '../../../_lib/response';
 import { syncConsultationBillingSnapshot, toAppBilling } from '../../_helpers';
 
@@ -33,7 +33,7 @@ export async function POST(
       return NextResponse.json({ error: 'Payment method is required' }, { status: 400 });
     }
 
-    const bill = await Billing.findById(id);
+    const bill = await Billing.findOne(buildHospitalQuery(user, { _id: id }));
     if (!bill) {
       return NextResponse.json({ error: 'Billing record not found' }, { status: 404 });
     }

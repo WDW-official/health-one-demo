@@ -1,5 +1,9 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
+import type { ClinicType } from './types';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
+const ACTIVE_HOSPITAL_ID_KEY = 'healthone_active_hospital_id';
+const ACTIVE_HOSPITAL_SLUG_KEY = 'healthone_active_hospital_slug';
+const DEMO_HOSPITAL_SETTINGS_KEY = 'healthone_demo_hospital_settings';
 
 type ListParams = {
   limit?: number;
@@ -15,7 +19,66 @@ type ListParams = {
   status?: string;
   startDate?: string;
   endDate?: string;
+  diagnosis?: string;
 };
+
+type CreateHospitalData = {
+  name: string;
+  slug?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  clinicTypes?: ClinicType[];
+  logoUrl?: string;
+  brandColor?: string;
+  subscriptionPlan?: string;
+  subscriptionStatus?: string;
+  trialDays?: number;
+  subscriptionDays?: number;
+  trialEndsAt?: string | Date | null;
+  currentPeriodEndsAt?: string | Date | null;
+  settings?: Record<string, unknown>;
+  adminName?: string;
+  adminEmail?: string;
+  adminPassword?: string;
+};
+
+type UpdatePlatformHospitalData = Partial<Omit<CreateHospitalData, 'adminName' | 'adminEmail' | 'adminPassword'>>;
+
+type HospitalSettingsData = {
+  address?: string;
+  logoUrl?: string;
+  brandColor?: string;
+  settings?: Record<string, unknown>;
+};
+
+function getDefaultDemoHospitalSettings() {
+  const now = new Date();
+
+  return {
+    id: 'demo',
+    name: 'Health One Dental Clinic',
+    slug: 'demo',
+    clinicTypes: ['dental'] as ClinicType[],
+    email: 'info@healthone.com',
+    phone: '',
+    address: '',
+    logoUrl: '',
+    brandColor: '#275cc2',
+    subscriptionPlan: 'demo',
+    subscriptionStatus: 'active',
+    trialEndsAt: null,
+    currentPeriodEndsAt: null,
+    isActive: true,
+    settings: {
+      branding: {
+        logoSize: 48,
+      },
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 function buildQuery(params: ListParams = {}) {
   const query = new URLSearchParams();
@@ -59,6 +122,10 @@ function normalizeConsultation<T extends Record<string, any>>(consultation: T) {
   return {
     ...normalized,
     nextVisitDate: normalized.nextVisitDate ? new Date(normalized.nextVisitDate as string) : normalized.nextVisitDate,
+    clinicalNotes: (normalized.clinicalNotes || []).map((note: any) => ({
+      ...note,
+      enteredAt: note.enteredAt ? new Date(note.enteredAt as string) : note.enteredAt,
+    })),
     createdAt: normalized.createdAt ? new Date(normalized.createdAt as string) : normalized.createdAt,
     updatedAt: normalized.updatedAt ? new Date(normalized.updatedAt as string) : normalized.updatedAt,
   };
@@ -137,6 +204,63 @@ function normalizeSponsoredItem<T extends Record<string, any>>(item: T) {
 export class ApiClient {
   private static token: string | null = null;
 
+  static setActiveHospital(hospital: { id: string; slug: string } | null) {
+    if (typeof window === 'undefined') return;
+
+    if (!hospital) {
+      localStorage.removeItem(ACTIVE_HOSPITAL_ID_KEY);
+      localStorage.removeItem(ACTIVE_HOSPITAL_SLUG_KEY);
+      return;
+    }
+
+    localStorage.setItem(ACTIVE_HOSPITAL_ID_KEY, hospital.id);
+    localStorage.setItem(ACTIVE_HOSPITAL_SLUG_KEY, hospital.slug);
+  }
+
+  static getActiveHospital() {
+    if (typeof window === 'undefined') return null;
+
+    const id = localStorage.getItem(ACTIVE_HOSPITAL_ID_KEY);
+    const slug = localStorage.getItem(ACTIVE_HOSPITAL_SLUG_KEY);
+    if (!id || !slug) return null;
+
+    return { id, slug };
+  }
+
+  static getDemoHospitalSettings() {
+    if (typeof window === 'undefined') return getDefaultDemoHospitalSettings();
+
+    const stored = localStorage.getItem(DEMO_HOSPITAL_SETTINGS_KEY);
+    if (!stored) return getDefaultDemoHospitalSettings();
+
+    try {
+      return {
+        ...getDefaultDemoHospitalSettings(),
+        ...JSON.parse(stored),
+      };
+    } catch {
+      return getDefaultDemoHospitalSettings();
+    }
+  }
+
+  static setDemoHospitalSettings(settingsData: HospitalSettingsData) {
+    if (typeof window === 'undefined') return getDefaultDemoHospitalSettings();
+
+    const current = this.getDemoHospitalSettings();
+    const next = {
+      ...current,
+      ...settingsData,
+      settings: {
+        ...current.settings,
+        ...(settingsData.settings || {}),
+      },
+      updatedAt: new Date(),
+    };
+
+    localStorage.setItem(DEMO_HOSPITAL_SETTINGS_KEY, JSON.stringify(next));
+    return next;
+  }
+
   static setToken(token: string) {
     this.token = token;
     if (typeof window !== 'undefined') {
@@ -168,6 +292,17 @@ export class ApiClient {
     const token = this.getToken();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    if (typeof window !== 'undefined' && !endpoint.startsWith('/platform')) {
+      const activeHospitalId = localStorage.getItem(ACTIVE_HOSPITAL_ID_KEY);
+      const activeHospitalSlug = localStorage.getItem(ACTIVE_HOSPITAL_SLUG_KEY);
+      if (activeHospitalId) {
+        headers.set('x-healthone-hospital-id', activeHospitalId);
+      }
+      if (activeHospitalSlug) {
+        headers.set('x-healthone-hospital-slug', activeHospitalSlug);
+      }
     }
 
     const response = await fetch(`${API_URL}${endpoint}`, {
@@ -225,6 +360,8 @@ export class ApiClient {
     name: string;
     role: 'admin' | 'doctor';
     doctorId?: string;
+    hospitalId?: string;
+    hospitalSlug?: string;
     isSuperAdmin?: boolean;
   }) {
     return this.request('/admin/users', {
@@ -242,6 +379,70 @@ export class ApiClient {
       method: 'PATCH',
       body: JSON.stringify({ isActive }),
     });
+  }
+
+  static async getPlatformHospitals(params: ListParams = {}) {
+    return this.request(`/platform/hospitals${buildQuery(params)}`);
+  }
+
+  static async createPlatformHospital(hospitalData: CreateHospitalData) {
+    return this.request('/platform/hospitals', {
+      method: 'POST',
+      body: JSON.stringify(hospitalData),
+    });
+  }
+
+  static async updatePlatformHospital(id: string, hospitalData: UpdatePlatformHospitalData) {
+    return this.request(`/platform/hospitals/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(hospitalData),
+    });
+  }
+
+  static async getHospitalSettings() {
+    return this.request('/hospital/settings');
+  }
+
+  static async updateHospitalSettings(settingsData: HospitalSettingsData) {
+    return this.request('/hospital/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(settingsData),
+    });
+  }
+
+  static async uploadHospitalLogo(file: File) {
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    const headers = new Headers();
+    const token = this.getToken();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    if (typeof window !== 'undefined') {
+      const activeHospitalId = localStorage.getItem(ACTIVE_HOSPITAL_ID_KEY);
+      const activeHospitalSlug = localStorage.getItem(ACTIVE_HOSPITAL_SLUG_KEY);
+      if (activeHospitalId) {
+        headers.set('x-healthone-hospital-id', activeHospitalId);
+      }
+      if (activeHospitalSlug) {
+        headers.set('x-healthone-hospital-slug', activeHospitalSlug);
+      }
+    }
+
+    const response = await fetch(`${API_URL}/hospital/logo`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error: any = await response.json().catch(() => ({}));
+      throw new Error(error.error || error.message || 'Logo upload failed');
+    }
+
+    return response.json();
   }
 
   // Patient endpoints
@@ -676,6 +877,7 @@ export class ApiClient {
       ...response,
       data: reminder,
       reminder,
+      whatsappUrl: response?.whatsappUrl,
     };
   }
 

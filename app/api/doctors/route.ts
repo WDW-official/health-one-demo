@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Doctor from '@/lib/models/Doctor';
-import { hasSuperAdminAccess } from '../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser, withHospitalId } from '../_lib/request-auth';
 import { jsonCreated, jsonError, jsonOk } from '../_lib/response';
 
 export async function GET(request: NextRequest) {
@@ -9,12 +9,10 @@ export async function GET(request: NextRequest) {
     await connectDB();
 
     const { searchParams } = new URL(request.url);
-    const rawLimit = parseInt(searchParams.get('limit') || '10', 10);
-    const rawSkip = parseInt(searchParams.get('skip') || '0', 10);
-    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 10;
-    const skip = Number.isFinite(rawSkip) ? Math.max(rawSkip, 0) : 0;
+    const { limit, skip } = getPagination(searchParams, 10, 100);
     const search = searchParams.get('search')?.trim();
-    const query: any = { isActive: true };
+    const user = getRequestUser(request);
+    const query: any = buildHospitalQuery(user, { isActive: true });
 
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -44,8 +42,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!hasSuperAdminAccess(request)) {
-      return NextResponse.json({ error: 'Only superadmins can create doctors' }, { status: 403 });
+    const user = getRequestUser(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Only admins can create doctors' }, { status: 403 });
     }
 
     await connectDB();
@@ -64,9 +63,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if doctor exists
-    const existing = await Doctor.findOne({
+    const existing = await Doctor.findOne(buildHospitalQuery(user, {
       $or: [{ email: body.email }, { licenseNumber: body.licenseNumber }],
-    });
+    }));
 
     if (existing) {
       return NextResponse.json(
@@ -75,7 +74,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const doctor = new Doctor(body);
+    const doctor = new Doctor(withHospitalId(user, body));
     await doctor.save();
 
     return jsonCreated(doctor.toObject(), { message: 'Doctor created successfully', doctor: doctor.toObject() });

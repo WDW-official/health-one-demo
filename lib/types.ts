@@ -4,6 +4,38 @@ import type { ConsultationProcedure } from './procedure-types';
 
 export type UserRole = 'admin' | 'doctor';
 
+export type HospitalSubscriptionStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled';
+export type ClinicType = 'dental' | 'family_medical' | 'small_hospital' | 'eye_clinic';
+
+export interface Hospital {
+  id: string;
+  name: string;
+  slug: string;
+  clinicTypes: ClinicType[];
+  email?: string;
+  phone?: string;
+  address?: string;
+  logoUrl?: string;
+  brandColor?: string;
+  subscriptionPlan: string;
+  subscriptionStatus: HospitalSubscriptionStatus;
+  trialEndsAt?: Date | null;
+  currentPeriodEndsAt?: Date | null;
+  isActive: boolean;
+  settings?: {
+    billing?: Record<string, unknown>;
+    consultation?: Record<string, unknown>;
+    inventory?: Record<string, unknown>;
+    notifications?: Record<string, unknown>;
+    branding?: {
+      logoSize?: number;
+      [key: string]: unknown;
+    };
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // User authentication
 export interface User {
   id: string;
@@ -11,6 +43,8 @@ export interface User {
   name: string;
   role: UserRole;
   isSuperAdmin?: boolean;
+  hospitalId?: string | null;
+  hospitalSlug?: string | null;
   doctorId?: string; // Reference to Doctor if role is 'doctor'
   isActive?: boolean;
   mustChangePassword?: boolean;
@@ -20,6 +54,7 @@ export interface User {
 // Doctor information
 export interface Doctor {
   id: string;
+  hospitalId?: string | null;
   name: string;
   email: string;
   phone: string;
@@ -41,6 +76,7 @@ export interface AuthState {
 
 export interface ChatMessage {
   id: string;
+  hospitalId?: string | null;
   senderId: string;
   senderName: string;
   senderRole: UserRole;
@@ -58,6 +94,8 @@ export interface ChatUser {
   name: string;
   role: UserRole;
   isSuperAdmin?: boolean;
+  hospitalId?: string | null;
+  hospitalSlug?: string | null;
   doctorId?: string;
   unreadCount?: number;
   latestMessage?: string;
@@ -67,6 +105,7 @@ export interface ChatUser {
 // Patient information
 export interface Patient {
   id: string;
+  hospitalId?: string | null;
   mrn?: string;
   firstName: string;
   lastName: string;
@@ -96,6 +135,7 @@ export interface Patient {
 // Appointment scheduling
 export interface Appointment {
   id: string;
+  hospitalId?: string | null;
   appointmentNumber?: string;
   patientId: string;
   doctorId: string;
@@ -168,6 +208,7 @@ export interface BillingPayment {
 
 export interface Billing {
   id: string;
+  hospitalId?: string | null;
   invoiceNumber: string;
   clinicName: string;
   patientId: string;
@@ -202,6 +243,7 @@ export type CheckInStatus = 'waiting' | 'with_doctor' | 'completed' | 'cancelled
 
 export interface CheckIn {
   id: string;
+  hospitalId?: string | null;
   patientId: string;
   patientName: string;
   patientMrn?: string;
@@ -221,6 +263,9 @@ export interface CheckIn {
 // Consultation records
 export interface Consultation {
   id: string;
+  hospitalId?: string | null;
+  clinicType?: ClinicType;
+  specialtyFields?: ConsultationSpecialtyFields;
   appointmentId?: string;
   patientId: string;
   doctorId: string;
@@ -230,6 +275,7 @@ export interface Consultation {
   examination?: string;
   diagnosis: string;
   treatmentPlan?: string;
+  clinicalNotes?: ConsultationClinicalNote[];
   procedures?: ConsultationProcedure[];
   estimatedConsumables?: ConsultationConsumableUsage[];
   actualConsumables?: ConsultationConsumableUsage[];
@@ -244,6 +290,45 @@ export interface Consultation {
   attachments?: ConsultationAttachment[];
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ConsultationClinicalNote {
+  enteredAt: Date;
+  enteredByUserId?: string;
+  enteredByName?: string;
+  clinicType?: ClinicType;
+  specialtyFields?: ConsultationSpecialtyFields;
+  presentingComplaints?: string;
+  impressionDiagnosis?: string;
+  treatmentPlan?: string;
+  notes?: string;
+}
+
+export interface ConsultationSpecialtyFields {
+  eyeClinic?: {
+    visualAcuityRight?: string;
+    visualAcuityLeft?: string;
+    intraocularPressureRight?: string;
+    intraocularPressureLeft?: string;
+    refractionRight?: string;
+    refractionLeft?: string;
+    anteriorSegment?: string;
+    posteriorSegment?: string;
+    eyeDiagnosis?: string;
+    recommendations?: string;
+  };
+  familyMedical?: {
+    bloodPressure?: string;
+    temperature?: string;
+    pulse?: string;
+    respiratoryRate?: string;
+    oxygenSaturation?: string;
+    weight?: string;
+    height?: string;
+    systemicReview?: string;
+    assessment?: string;
+    medicalPlan?: string;
+  };
 }
 
 export interface ConsultationConsumableUsage {
@@ -281,6 +366,7 @@ export type ReminderStatus = 'draft' | 'queued' | 'sent' | 'failed';
 
 export interface Reminder {
   id: string;
+  hospitalId?: string | null;
   appointmentId?: string;
   patientId: string;
   doctorId?: string;
@@ -312,6 +398,7 @@ export interface SponsoredItem {
 // Inventory & Stock Management
 export interface Inventory {
   id: string;
+  hospitalId?: string | null;
   name: string;
   category: string;
   quantity: number;

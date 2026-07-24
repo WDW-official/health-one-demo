@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Consultation from '@/lib/models/Consultation';
 import { jsonError, jsonOk } from '../../../_lib/response';
+import { buildHospitalQuery, getRequestUser } from '../../../_lib/request-auth';
 
 function toAppConsultation(doc: any) {
   if (!doc) return doc;
@@ -23,7 +24,8 @@ export async function GET(
     await connectDB();
 
     const { patientId } = await params;
-    const consultations = await Consultation.find({ patientId })
+    const user = getRequestUser(request);
+    const consultations = await Consultation.find(buildHospitalQuery(user, { patientId }))
       .lean()
       .sort({ createdAt: -1 });
 

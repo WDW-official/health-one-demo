@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Inventory from '@/lib/models/Inventory';
 import { seedInventoryItemsFromProcedureConsumables } from '@/lib/consumable-usage';
-import { getPagination, getRequestUser } from '@/app/api/_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser } from '@/app/api/_lib/request-auth';
 import { jsonOk, jsonError } from '@/app/api/_lib/response';
 
 export async function GET(req: NextRequest) {
@@ -11,8 +11,8 @@ export async function GET(req: NextRequest) {
     if (!user) return jsonError('Unauthorized', 401);
 
     await connectDB();
-    if ((await Inventory.countDocuments()) === 0) {
-      await seedInventoryItemsFromProcedureConsumables();
+    if ((await Inventory.countDocuments(buildHospitalQuery(user))) === 0) {
+      await seedInventoryItemsFromProcedureConsumables(user.hospitalId || null);
     }
 
     const { searchParams } = new URL(req.url);
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     const category = searchParams.get('category');
     const status = searchParams.get('status');
 
-    const query: any = {};
+    const query: any = buildHospitalQuery(user);
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },

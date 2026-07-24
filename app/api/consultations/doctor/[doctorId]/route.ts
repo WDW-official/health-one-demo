@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Consultation from '@/lib/models/Consultation';
 import { jsonError, jsonOk } from '../../../_lib/response';
-import { getPagination, getRequestUser } from '../../../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser } from '../../../_lib/request-auth';
 
 function toAppConsultation(doc: any) {
   if (!doc) return doc;
@@ -31,14 +31,16 @@ export async function GET(
       return jsonError('Forbidden', 403);
     }
 
-    const consultations = await Consultation.find({ doctorId })
+    const query = buildHospitalQuery(user, { doctorId });
+
+    const consultations = await Consultation.find(query)
       .lean()
       .limit(limit)
       .skip(skip)
       .sort({ createdAt: -1 });
 
     const normalized = consultations.map(toAppConsultation);
-    const total = await Consultation.countDocuments({ doctorId });
+    const total = await Consultation.countDocuments(query);
     return jsonOk(normalized, { consultations: normalized, total, limit, skip });
   } catch (error) {
     console.error('Get consultations by doctor error:', error);

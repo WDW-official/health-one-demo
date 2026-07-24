@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import { connectDB } from '@/lib/mongodb';
 import ChatMessage from '@/lib/models/ChatMessage';
 import User from '@/lib/models/User';
-import { getRequestUser } from '../../_lib/request-auth';
+import { buildHospitalQuery, getRequestUser } from '../../_lib/request-auth';
 import { jsonError, jsonOk } from '../../_lib/response';
 
 function serializeUser(user: any, meta: Record<string, any> = {}) {
@@ -13,6 +13,8 @@ function serializeUser(user: any, meta: Record<string, any> = {}) {
     name: user.name,
     role: user.role,
     doctorId: user.doctorId,
+    hospitalId: user.hospitalId,
+    hospitalSlug: user.hospitalSlug,
     isSuperAdmin: Boolean(user.isSuperAdmin),
     unreadCount: meta.unreadCount || 0,
     latestMessage: meta.latestMessage || '',
@@ -38,10 +40,10 @@ export async function GET(request: NextRequest) {
     const currentUserObjectId = Types.ObjectId.isValid(currentUser.id)
       ? new Types.ObjectId(currentUser.id)
       : currentUser.id;
-    const query: Record<string, any> = {
+    const query: Record<string, any> = buildHospitalQuery(currentUser, {
       _id: { $ne: currentUserObjectId },
       isActive: { $ne: false },
-    };
+    });
 
     if (search) {
       query.$or = [
@@ -51,19 +53,19 @@ export async function GET(request: NextRequest) {
     }
 
     const users = await User.find(query)
-      .select('email name role doctorId isSuperAdmin')
+      .select('email name role doctorId hospitalId hospitalSlug isSuperAdmin')
       .sort({ name: 1 })
       .limit(100)
       .lean();
 
     const visibleUsers = users.filter((user: any) => String(user._id) !== currentUser.id);
     const userIds = visibleUsers.map((user: any) => String(user._id));
-    const messageMeta = await ChatMessage.find({
+    const messageMeta = await ChatMessage.find(buildHospitalQuery(currentUser, {
       $or: [
         { senderId: currentUser.id, recipientId: { $in: userIds } },
         { senderId: { $in: userIds }, recipientId: currentUser.id },
       ],
-    })
+    }))
       .select('senderId recipientId message readAt createdAt')
       .sort({ createdAt: -1 })
       .lean();

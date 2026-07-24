@@ -3,7 +3,7 @@ import { connectDB } from '@/lib/mongodb';
 import Appointment from '@/lib/models/Appointment';
 import { ensureAppointmentNumbers } from '@/lib/appointment-number';
 import { jsonError, jsonOk } from '../../_lib/response';
-import { getPagination, getRequestUser } from '../../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser } from '../../_lib/request-auth';
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,12 +22,12 @@ export async function GET(request: NextRequest) {
       return jsonError('startDate and endDate are required', 400);
     }
 
-    const query: Record<string, unknown> = {
+    const query: Record<string, unknown> = buildHospitalQuery(user, {
       dateTime: {
         $gte: new Date(startDate),
         $lte: new Date(endDate),
       },
-    };
+    });
 
     if (user?.role === 'doctor') {
       if (doctorId && doctorId !== user.doctorId) {

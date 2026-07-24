@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IDoctor extends Document {
+  hospitalId?: string | null;
   name: string;
   email: string;
   phone: string;
@@ -17,6 +18,11 @@ export interface IDoctor extends Document {
 
 const doctorSchema = new Schema<IDoctor>(
   {
+    hospitalId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     name: {
       type: String,
       required: [true, 'Doctor name is required'],
@@ -63,5 +69,7 @@ const doctorSchema = new Schema<IDoctor>(
   },
   { timestamps: true }
 );
+
+doctorSchema.index({ hospitalId: 1, isActive: 1 });
 
 export default mongoose.models.Doctor || mongoose.model<IDoctor>('Doctor', doctorSchema);

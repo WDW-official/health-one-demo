@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import { connectDB } from '@/lib/mongodb';
 import Billing from '@/lib/models/Billing';
 import { calculateBillingStatus, roundMoney } from '@/lib/billing-utils';
-import { getRequestUser } from '../../_lib/request-auth';
+import { buildHospitalQuery, getRequestUser } from '../../_lib/request-auth';
 import { jsonError, jsonOk } from '../../_lib/response';
 import { syncConsultationBillingSnapshot, toAppBilling } from '../_helpers';
 
@@ -21,9 +21,12 @@ export async function GET(
     const { id } = await params;
 
     const bill = await Billing.findOne(
-      Types.ObjectId.isValid(id)
-        ? { $or: [{ _id: id }, { consultationId: id }] }
-        : { consultationId: id }
+      buildHospitalQuery(
+        user,
+        Types.ObjectId.isValid(id)
+          ? { $or: [{ _id: id }, { consultationId: id }] }
+          : { consultationId: id }
+      )
     ).lean();
     if (!bill) {
       return NextResponse.json({ error: 'Billing record not found' }, { status: 404 });
@@ -58,7 +61,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const current = await Billing.findById(id);
+    const current = await Billing.findOne(buildHospitalQuery(user, { _id: id }));
     if (!current) {
       return NextResponse.json({ error: 'Billing record not found' }, { status: 404 });
     }
@@ -93,7 +96,7 @@ export async function PATCH(
       notes: body.notes ?? current.notes,
     };
 
-    const bill = await Billing.findByIdAndUpdate(id, update, {
+    const bill = await Billing.findOneAndUpdate(buildHospitalQuery(user, { _id: id }), update, {
       new: true,
       runValidators: true,
     }).lean();

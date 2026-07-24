@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Appointment, Patient, Doctor } from '@/lib/types';
 import { getCurrentUser } from '@/lib/auth';
@@ -240,35 +241,44 @@ export default function AppointmentForm({
 
             <div>
               <label className="block text-sm font-medium mb-1">Procedure Category *</label>
-              <select
+              <Select
                 value={procedureCategory}
-                onChange={(event) =>
-                  handleProcedureCategoryChange(event.target.value as (typeof PROCEDURE_GROUPS)[number]['category'])
+                onValueChange={(value) =>
+                  handleProcedureCategoryChange(value as (typeof PROCEDURE_GROUPS)[number]['category'])
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select procedure category" />
+                </SelectTrigger>
+                <SelectContent>
                 {PROCEDURE_GROUPS.map((group) => (
-                  <option key={group.category} value={group.category}>
+                  <SelectItem key={group.category} value={group.category}>
                     {group.category}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
               <label className="block text-sm font-medium mb-1">Procedure Type *</label>
-              <select
-                name="type"
+              <Select
                 value={formData.type}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onValueChange={(value) =>
+                  setFormData((current) => ({ ...current, type: value as typeof current.type }))
+                }
               >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select procedure type" />
+                </SelectTrigger>
+                <SelectContent>
                 {(PROCEDURE_GROUPS.find((group) => group.category === procedureCategory)?.procedures || []).map((procedureType) => (
-                  <option key={procedureType} value={procedureType}>
+                  <SelectItem key={procedureType} value={procedureType}>
                     {procedureType}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
@@ -299,17 +309,22 @@ export default function AppointmentForm({
             {isEditing && !isRescheduling && (
               <div>
                 <label className="block text-sm font-medium mb-1">Status</label>
-                <select
-                  name="status"
+                <Select
                   value={formData.status}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onValueChange={(value) =>
+                    setFormData((current) => ({ ...current, status: value as typeof current.status }))
+                  }
                 >
-                  <option value="scheduled">Scheduled</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="noshow">No-show</option>
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="scheduled">Scheduled</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                    <SelectItem value="noshow">No-show</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </div>

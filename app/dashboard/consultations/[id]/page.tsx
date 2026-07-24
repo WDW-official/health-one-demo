@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Edit2, ChevronLeft, FileText } from 'lucide-react';
+import { Edit2, ChevronLeft, FileText, History } from 'lucide-react';
 
 import { ApiClient } from '@/lib/api-client';
 import { getCurrentUser } from '@/lib/auth';
 import { Appointment, Billing, Consultation, Patient } from '@/lib/types';
+import { getClinicTypeLabel } from '@/lib/clinic-config';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingState } from '@/components/loading-state';
 import { type ConsultationProcedure } from '@/lib/procedure-types';
 
@@ -81,6 +83,10 @@ function mergeProcedurePricesFromBilling(
     }));
 
   return [...mergedProcedures, ...missingBillingProcedures];
+}
+
+function hasValues(record?: Record<string, unknown>) {
+  return Object.values(record || {}).some((value) => String(value || '').trim().length > 0);
 }
 
 export default function ConsultationDetailPage() {
@@ -224,6 +230,9 @@ export default function ConsultationDetailPage() {
   const chartBlocks = (consultation as any).chartBlocks || [];
   const estimatedConsumables = consultation.estimatedConsumables || [];
   const actualConsumables = consultation.actualConsumables || [];
+  const clinicalNotes = [...((consultation as any).clinicalNotes || [])].sort(
+    (a, b) => new Date(b.enteredAt || 0).getTime() - new Date(a.enteredAt || 0).getTime()
+  );
   const procedures = procedureItems;
   const paymentStatus = (billing?.paymentStatus || consultation.paymentStatus || 'unpaid') as keyof typeof paymentStatusMeta;
   const paymentMeta = paymentStatusMeta[paymentStatus] || paymentStatusMeta.unpaid;
@@ -430,6 +439,82 @@ export default function ConsultationDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {clinicalNotes.length > 0 && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Clinical Notes Timeline
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {clinicalNotes.map((note, index) => (
+                  <div key={`${note.enteredAt}-${index}`} className="relative rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-semibold text-slate-950">
+                          {new Date(note.enteredAt).toLocaleDateString()} at{' '}
+                          {new Date(note.enteredAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                        {note.enteredByName && (
+                          <p className="text-sm text-slate-500">Entered by {note.enteredByName}</p>
+                        )}
+                      </div>
+                      {index === 0 && (
+                        <span className="w-fit rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                          Latest
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Presenting Complaints
+                        </p>
+                        <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-800">
+                          {note.presentingComplaints || 'No presenting complaints recorded'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Impression/Diagnosis
+                        </p>
+                        <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-800">
+                          {note.impressionDiagnosis || 'No impression/diagnosis recorded'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Treatment Plan
+                        </p>
+                        <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-800">
+                          {note.treatmentPlan || 'No treatment plan recorded'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {note.notes && (
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Additional Notes
+                        </p>
+                        <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-800">
+                          {note.notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle>Presenting Complaints</CardTitle>
@@ -551,6 +636,60 @@ export default function ConsultationDetailPage() {
         </Card>
       )}
 
+      {consultation.clinicType && consultation.clinicType !== 'dental' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{getClinicTypeLabel(consultation.clinicType)} Fields</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {consultation.clinicType === 'eye_clinic' && hasValues(consultation.specialtyFields?.eyeClinic) && (
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ['Visual Acuity Right', consultation.specialtyFields?.eyeClinic?.visualAcuityRight],
+                  ['Visual Acuity Left', consultation.specialtyFields?.eyeClinic?.visualAcuityLeft],
+                  ['IOP Right', consultation.specialtyFields?.eyeClinic?.intraocularPressureRight],
+                  ['IOP Left', consultation.specialtyFields?.eyeClinic?.intraocularPressureLeft],
+                  ['Refraction Right', consultation.specialtyFields?.eyeClinic?.refractionRight],
+                  ['Refraction Left', consultation.specialtyFields?.eyeClinic?.refractionLeft],
+                  ['Anterior Segment', consultation.specialtyFields?.eyeClinic?.anteriorSegment],
+                  ['Posterior Segment', consultation.specialtyFields?.eyeClinic?.posteriorSegment],
+                  ['Eye Diagnosis', consultation.specialtyFields?.eyeClinic?.eyeDiagnosis],
+                  ['Recommendations', consultation.specialtyFields?.eyeClinic?.recommendations],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+                    <p className="mt-1 whitespace-pre-line text-sm text-slate-800">{value || 'Not recorded'}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(consultation.clinicType === 'family_medical' || consultation.clinicType === 'small_hospital') &&
+              hasValues(consultation.specialtyFields?.familyMedical) && (
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    ['Blood Pressure', consultation.specialtyFields?.familyMedical?.bloodPressure],
+                    ['Temperature', consultation.specialtyFields?.familyMedical?.temperature],
+                    ['Pulse', consultation.specialtyFields?.familyMedical?.pulse],
+                    ['Resp. Rate', consultation.specialtyFields?.familyMedical?.respiratoryRate],
+                    ['Oxygen Sat.', consultation.specialtyFields?.familyMedical?.oxygenSaturation],
+                    ['Weight', consultation.specialtyFields?.familyMedical?.weight],
+                    ['Height', consultation.specialtyFields?.familyMedical?.height],
+                    ['Systemic Review', consultation.specialtyFields?.familyMedical?.systemicReview],
+                    ['Assessment', consultation.specialtyFields?.familyMedical?.assessment],
+                    ['Medical Plan', consultation.specialtyFields?.familyMedical?.medicalPlan],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+                      <p className="mt-1 whitespace-pre-line text-sm text-slate-800">{value || 'Not recorded'}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -606,16 +745,20 @@ export default function ConsultationDetailPage() {
                         <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
                           Procedure Status
                         </label>
-                        <select
+                        <Select
                           value={item.status || 'pending'}
-                          onChange={(event) => updateProcedureField(index, 'status', event.target.value)}
                           disabled={!canManageBilling}
-                          className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          onValueChange={(value) => updateProcedureField(index, 'status', value)}
                         >
-                          <option value="pending">Pending</option>
-                          <option value="completed">Completed</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
+                          <SelectTrigger className="mt-1 w-full">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="cancelled">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                     {item.updatedByName && (

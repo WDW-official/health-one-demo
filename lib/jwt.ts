@@ -8,6 +8,10 @@ export interface JWTPayload {
   role: string;
   name: string;
   doctorId?: string | null;
+  hospitalId?: string | null;
+  hospitalSlug?: string | null;
+  activeHospitalId?: string | null;
+  activeHospitalSlug?: string | null;
   isSuperAdmin?: boolean;
 }
 

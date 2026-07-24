@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Inventory from '@/lib/models/Inventory';
-import { getRequestUser } from '@/app/api/_lib/request-auth';
+import { buildHospitalQuery, getRequestUser } from '@/app/api/_lib/request-auth';
 import { jsonOk, jsonError, jsonCreated } from '@/app/api/_lib/response';
 
 const mockCategories = [
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     }
 
     await connectDB();
-    const dbCategories = await Inventory.distinct('category');
+    const dbCategories = await Inventory.distinct('category', buildHospitalQuery(user));
     const categoryMap = new Map<string, { value: string; label: string }>();
 
     [...mockCategories.map((item) => item.value), ...dbCategories]

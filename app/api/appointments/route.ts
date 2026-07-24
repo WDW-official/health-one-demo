@@ -10,12 +10,13 @@ import {
   normalizeAppointment,
 } from '@/lib/appointment-number';
 import { jsonCreated, jsonError, jsonOk } from '../_lib/response';
-import { getPagination, getRequestUser } from '../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser, withHospitalId } from '../_lib/request-auth';
 import { getApiErrorMessage } from '../_lib/error-message';
 
 function buildAppointmentReminder(appointment: any, patient: any) {
   const dateTime = new Date(appointment.dateTime);
   return {
+    hospitalId: appointment.hospitalId || null,
     patientId: appointment.patientId,
     appointmentId: appointment.id || String(appointment._id),
     doctorId: appointment.doctorId,
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
     const doctorId = searchParams.get('doctorId');
     const user = getRequestUser(request);
 
-    let query: any = {};
+    let query: any = buildHospitalQuery(user);
 
     if (status) query.status = status;
     if (patientId) query.patientId = patientId;
@@ -89,6 +90,11 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
+    const user = getRequestUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
 
     const required = ['patientId', 'doctorId', 'dateTime', 'type'];
@@ -110,14 +116,21 @@ export async function POST(request: NextRequest) {
 
     // Get doctor and patient names for caching
     const [doctor, patient] = await Promise.all([
-      Doctor.findById(body.doctorId),
-      Patient.findById(body.patientId),
+      Doctor.findOne(buildHospitalQuery(user, { _id: body.doctorId })),
+      Patient.findOne(buildHospitalQuery(user, { _id: body.patientId })),
     ]);
+
+    if (!doctor || !patient) {
+      return NextResponse.json(
+        { error: 'Patient or doctor not found for this hospital' },
+        { status: 404 }
+      );
+    }
 
     const appointmentNumber = await getNextAppointmentNumber(body.patientId, patient?.mrn);
 
     const appointment = new Appointment({
-      ...body,
+      ...withHospitalId(user, body),
       appointmentNumber,
       doctorName: doctor?.name,
       patientName: patient?.firstName + ' ' + patient?.lastName,

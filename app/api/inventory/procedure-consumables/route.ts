@@ -5,7 +5,7 @@ import {
   ensureProcedureConsumableTemplates,
   seedInventoryItemsFromProcedureConsumables,
 } from '@/lib/consumable-usage';
-import { getPagination, getRequestUser } from '@/app/api/_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser } from '@/app/api/_lib/request-auth';
 import { jsonError, jsonOk } from '@/app/api/_lib/response';
 
 export async function GET(request: NextRequest) {
@@ -14,14 +14,14 @@ export async function GET(request: NextRequest) {
     if (!user) return jsonError('Unauthorized', 401);
 
     await connectDB();
-    await ensureProcedureConsumableTemplates();
+    await ensureProcedureConsumableTemplates(user.hospitalId || null);
 
     const { searchParams } = new URL(request.url);
     const { limit, skip } = getPagination(searchParams, 100, 500);
     const search = searchParams.get('search');
     const category = searchParams.get('category');
 
-    const query: any = { isActive: true };
+    const query: any = buildHospitalQuery(user, { isActive: true });
     if (category) query.category = category;
     if (search) {
       query.$or = [
@@ -55,10 +55,10 @@ export async function POST(request: NextRequest) {
     }
 
     await connectDB();
-    await ensureProcedureConsumableTemplates();
-    const inventorySeed = await seedInventoryItemsFromProcedureConsumables();
+    await ensureProcedureConsumableTemplates(user.hospitalId || null);
+    const inventorySeed = await seedInventoryItemsFromProcedureConsumables(user.hospitalId || null);
 
-    const total = await ProcedureConsumableTemplate.countDocuments({ isActive: true });
+    const total = await ProcedureConsumableTemplate.countDocuments(buildHospitalQuery(user, { isActive: true }));
 
     return jsonOk(
       { total, inventorySeed },

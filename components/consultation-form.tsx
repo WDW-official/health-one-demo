@@ -6,21 +6,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import {
   Consultation,
   ConsultationAttachment,
   ConsultationConsumableUsage,
+  ConsultationSpecialtyFields,
+  ClinicType,
   Patient,
   Appointment,
   Doctor,
 } from '@/lib/types';
 import { getCurrentUser } from '@/lib/auth';
 import { ApiClient } from '@/lib/api-client';
-import { getProcedureCategory, PROCEDURE_GROUPS, type ConsultationProcedure } from '@/lib/procedure-types';
+import { getActiveClinicProfile } from '@/lib/active-clinic-profile';
+import { getClinicTypeLabel, normalizeClinicTypes } from '@/lib/clinic-config';
+import { getProcedureCategory, getProcedureGroupsForClinicType, PROCEDURE_GROUPS, type ConsultationProcedure } from '@/lib/procedure-types';
 import { getErrorMessage } from '@/lib/error-message';
 import { toast } from '@/hooks/use-toast';
-import { AlertCircle, FileUp, Plus, Paperclip, Sparkles, Trash2, X } from 'lucide-react';
+import { AlertCircle, History, FileUp, Plus, Paperclip, Sparkles, Trash2, X } from 'lucide-react';
 
 interface ConsultationFormProps {
   consultation?: Consultation;
@@ -67,6 +72,46 @@ const emptyActualConsumable: ConsultationConsumableUsage = {
   notes: '',
 };
 
+const emptySpecialtyFields: ConsultationSpecialtyFields = {
+  eyeClinic: {
+    visualAcuityRight: '',
+    visualAcuityLeft: '',
+    intraocularPressureRight: '',
+    intraocularPressureLeft: '',
+    refractionRight: '',
+    refractionLeft: '',
+    anteriorSegment: '',
+    posteriorSegment: '',
+    eyeDiagnosis: '',
+    recommendations: '',
+  },
+  familyMedical: {
+    bloodPressure: '',
+    temperature: '',
+    pulse: '',
+    respiratoryRate: '',
+    oxygenSaturation: '',
+    weight: '',
+    height: '',
+    systemicReview: '',
+    assessment: '',
+    medicalPlan: '',
+  },
+};
+
+function mergeSpecialtyFields(value?: ConsultationSpecialtyFields | null): ConsultationSpecialtyFields {
+  return {
+    eyeClinic: {
+      ...emptySpecialtyFields.eyeClinic,
+      ...(value?.eyeClinic || {}),
+    },
+    familyMedical: {
+      ...emptySpecialtyFields.familyMedical,
+      ...(value?.familyMedical || {}),
+    },
+  };
+}
+
 export default function ConsultationForm({
   consultation,
   isEditing = false,
@@ -79,6 +124,13 @@ export default function ConsultationForm({
   const [patients, setPatients] = useState<Patient[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [activeClinicType, setActiveClinicType] = useState<ClinicType>(
+    consultation?.clinicType || 'dental'
+  );
+  const [availableClinicTypes, setAvailableClinicTypes] = useState<ClinicType[]>(['dental']);
+  const [specialtyFields, setSpecialtyFields] = useState<ConsultationSpecialtyFields>(
+    mergeSpecialtyFields(consultation?.specialtyFields)
+  );
   const [attachments, setAttachments] = useState<ConsultationAttachment[]>(
     (consultation as any)?.attachments || []
   );
@@ -120,10 +172,18 @@ export default function ConsultationForm({
       : '',
     notes: consultation?.notes || '',
   });
+  const clinicalNotes = [...((consultation as any)?.clinicalNotes || [])].sort(
+    (a, b) => new Date(b.enteredAt || 0).getTime() - new Date(a.enteredAt || 0).getTime()
+  );
 
   const selectedPatientAppointments = appointments.filter(
     (appointment) => appointment.patientId === formData.patientId
   );
+  const activeProcedureGroups = getProcedureGroupsForClinicType(activeClinicType);
+  const isDentalConsultation = activeClinicType === 'dental';
+  const isEyeClinicConsultation = activeClinicType === 'eye_clinic';
+  const isFamilyMedicalConsultation =
+    activeClinicType === 'family_medical' || activeClinicType === 'small_hospital';
 
   useEffect(() => {
     const loadFormData = async () => {
@@ -141,10 +201,18 @@ export default function ConsultationForm({
         }),
         ApiClient.getAllDoctors({ limit: 200, skip: 0 }),
       ]);
+      const hospitalResponse = await ApiClient.getHospitalSettings().catch(() => null);
+      const hospital = hospitalResponse?.hospital || hospitalResponse?.data || ApiClient.getDemoHospitalSettings();
+      const clinicTypes = normalizeClinicTypes(hospital?.clinicTypes);
+      const hospitalKey = hospital?.id || hospital?.slug || 'demo';
+      const nextClinicType = consultation?.clinicType || getActiveClinicProfile(clinicTypes, hospitalKey);
 
       setPatients(patientRes?.data || []);
       setAppointments(appointmentRes?.data || []);
       setDoctors((doctorRes?.data || []).filter((doctor: Doctor) => doctor.isActive));
+      setAvailableClinicTypes(clinicTypes);
+      setActiveClinicType(nextClinicType);
+      setSpecialtyFields(mergeSpecialtyFields(consultation?.specialtyFields));
       setAttachments((consultation as any)?.attachments || []);
       setChartBlocks(
         ((consultation as any)?.chartBlocks || []).length > 0
@@ -154,7 +222,13 @@ export default function ConsultationForm({
       setProcedures(
         ((consultation as any)?.procedures || []).length > 0
           ? (consultation as any).procedures
-          : [{ ...emptyProcedure }]
+          : [
+              {
+                category: getProcedureGroupsForClinicType(nextClinicType)[0].category,
+                procedure: getProcedureGroupsForClinicType(nextClinicType)[0].procedures[0],
+                status: 'completed',
+              },
+            ]
       );
       setActualConsumables((consultation as any)?.actualConsumables || []);
 
@@ -211,6 +285,50 @@ export default function ConsultationForm({
     }));
   };
 
+  const handleClinicTypeChange = (clinicType: ClinicType) => {
+    const nextGroups = getProcedureGroupsForClinicType(clinicType);
+    setActiveClinicType(clinicType);
+    setProcedures((current) =>
+      current.length > 0
+        ? current
+        : [
+            {
+              category: nextGroups[0].category,
+              procedure: nextGroups[0].procedures[0],
+              status: 'completed',
+            },
+          ]
+    );
+  };
+
+  const updateEyeClinicField = (
+    field: keyof NonNullable<ConsultationSpecialtyFields['eyeClinic']>,
+    value: string
+  ) => {
+    setSpecialtyFields((current) => ({
+      ...current,
+      eyeClinic: {
+        ...emptySpecialtyFields.eyeClinic,
+        ...(current.eyeClinic || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const updateFamilyMedicalField = (
+    field: keyof NonNullable<ConsultationSpecialtyFields['familyMedical']>,
+    value: string
+  ) => {
+    setSpecialtyFields((current) => ({
+      ...current,
+      familyMedical: {
+        ...emptySpecialtyFields.familyMedical,
+        ...(current.familyMedical || {}),
+        [field]: value,
+      },
+    }));
+  };
+
   const addChartBlock = () => {
     setChartBlocks((current) => [...current, { ...emptyChartBlock }]);
   };
@@ -245,7 +363,7 @@ export default function ConsultationForm({
   };
 
   const updateProcedureCategory = (index: number, category: string) => {
-    const group = PROCEDURE_GROUPS.find((item) => item.category === category);
+    const group = activeProcedureGroups.find((item) => item.category === category);
     setProcedures((current) =>
       current.map((item, currentIndex) =>
         currentIndex === index
@@ -333,6 +451,8 @@ export default function ConsultationForm({
     formData.presentingComplaints,
     formData.examination,
     formData.treatmentPlan,
+    ...Object.values(specialtyFields.eyeClinic || {}),
+    ...Object.values(specialtyFields.familyMedical || {}),
     ...chartBlocks.flatMap((block) => Object.values(block)),
     ...procedures.map((item) => item.procedure || ''),
   ].some((value) => value.trim().length > 0);
@@ -388,6 +508,8 @@ export default function ConsultationForm({
         treatmentPlan: formData.treatmentPlan,
         procedures: getFilledProcedures(),
         patientContext: getPatientContext(),
+        specialtyContext: specialtyFields,
+        clinicType: activeClinicType,
       });
 
       const suggestions = response?.data?.suggestions || response?.suggestions || [];
@@ -420,6 +542,24 @@ export default function ConsultationForm({
       ...prev,
       diagnosis: [prev.diagnosis.trim(), suggestion.diagnosis].filter(Boolean).join('\n'),
     }));
+  };
+
+  const continueClinicalNote = (note: any) => {
+    setFormData((prev) => ({
+      ...prev,
+      presentingComplaints: note.presentingComplaints || prev.presentingComplaints,
+      diagnosis: note.impressionDiagnosis || prev.diagnosis,
+      treatmentPlan: note.treatmentPlan || prev.treatmentPlan,
+      notes: note.notes || prev.notes,
+    }));
+    if (note.clinicType) {
+      setActiveClinicType(note.clinicType);
+    }
+    setSpecialtyFields(mergeSpecialtyFields(note.specialtyFields));
+    toast({
+      title: 'Previous note loaded',
+      description: 'You can continue editing and save a new dated note entry.',
+    });
   };
 
   const uploadSingleAttachment = (file: File, progressCallback?: (percent: number) => void) => {
@@ -544,6 +684,8 @@ export default function ConsultationForm({
       if (isEditing && consultation) {
         await ApiClient.updateConsultation(consultation.id, {
           ...formData,
+          clinicType: activeClinicType,
+          specialtyFields,
           nextVisitDate,
           doctorId: consultation.doctorId,
           chartBlocks: getFilledChartBlocks(),
@@ -556,6 +698,8 @@ export default function ConsultationForm({
       } else {
         const res = await ApiClient.createConsultation({
           ...formData,
+          clinicType: activeClinicType,
+          specialtyFields,
           nextVisitDate,
           doctorId: formData.doctorId,
           chartBlocks: getFilledChartBlocks(),
@@ -594,6 +738,51 @@ export default function ConsultationForm({
             <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {isEditing && clinicalNotes.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <History className="h-5 w-5 text-slate-600" />
+                  <div>
+                    <h3 className="font-semibold text-slate-950">Previous Clinical Notes</h3>
+                    <p className="text-sm text-slate-500">
+                      Continue from the latest note or review earlier entries.
+                    </p>
+                  </div>
+                </div>
+                <Button type="button" variant="outline" onClick={() => continueClinicalNote(clinicalNotes[0])}>
+                  Continue Latest Note
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {clinicalNotes.slice(0, 3).map((note, index) => (
+                  <div key={`${note.enteredAt}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                      <span className="font-semibold text-slate-700">
+                        {new Date(note.enteredAt).toLocaleString()}
+                      </span>
+                      {note.enteredByName && <span>{note.enteredByName}</span>}
+                    </div>
+                    <div className="grid gap-2 text-sm md:grid-cols-3">
+                      <p className="line-clamp-3 whitespace-pre-line">
+                        <span className="font-semibold text-slate-900">Complaints: </span>
+                        {note.presentingComplaints || 'None'}
+                      </p>
+                      <p className="line-clamp-3 whitespace-pre-line">
+                        <span className="font-semibold text-slate-900">Diagnosis: </span>
+                        {note.impressionDiagnosis || 'None'}
+                      </p>
+                      <p className="line-clamp-3 whitespace-pre-line">
+                        <span className="font-semibold text-slate-900">Plan: </span>
+                        {note.treatmentPlan || 'None'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -665,6 +854,29 @@ export default function ConsultationForm({
             )}
           </div>
 
+          {availableClinicTypes.length > 1 && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <label className="mb-2 block text-sm font-semibold text-slate-900">
+                Consultation Specialty
+              </label>
+              <Select
+                value={activeClinicType}
+                onValueChange={(value) => handleClinicTypeChange(value as ClinicType)}
+              >
+                <SelectTrigger className="w-full bg-white md:max-w-sm">
+                  <SelectValue placeholder="Select specialty" />
+                </SelectTrigger>
+                <SelectContent>
+                {availableClinicTypes.map((clinicType) => (
+                  <SelectItem key={clinicType} value={clinicType}>
+                    {getClinicTypeLabel(clinicType)}
+                  </SelectItem>
+                ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium mb-1">Presenting Complaints</label>
             <textarea
@@ -689,7 +901,147 @@ export default function ConsultationForm({
             />
           </div>
 
-          <div>
+          {isEyeClinicConsultation && (
+            <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-slate-950">Eye Clinic Examination</h3>
+                <p className="text-sm text-slate-500">Record vision, pressure, refraction, and segment findings.</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Visual Acuity Right</label>
+                  <Input
+                    value={specialtyFields.eyeClinic?.visualAcuityRight || ''}
+                    onChange={(event) => updateEyeClinicField('visualAcuityRight', event.target.value)}
+                    placeholder="e.g. 6/6"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Visual Acuity Left</label>
+                  <Input
+                    value={specialtyFields.eyeClinic?.visualAcuityLeft || ''}
+                    onChange={(event) => updateEyeClinicField('visualAcuityLeft', event.target.value)}
+                    placeholder="e.g. 6/9"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">IOP Right</label>
+                  <Input
+                    value={specialtyFields.eyeClinic?.intraocularPressureRight || ''}
+                    onChange={(event) => updateEyeClinicField('intraocularPressureRight', event.target.value)}
+                    placeholder="mmHg"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">IOP Left</label>
+                  <Input
+                    value={specialtyFields.eyeClinic?.intraocularPressureLeft || ''}
+                    onChange={(event) => updateEyeClinicField('intraocularPressureLeft', event.target.value)}
+                    placeholder="mmHg"
+                  />
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {[
+                  ['refractionRight', 'Refraction Right', 'e.g. -1.00 DS'] as const,
+                  ['refractionLeft', 'Refraction Left', 'e.g. -0.50 DS'] as const,
+                ].map(([field, label, placeholder]) => (
+                  <div key={field}>
+                    <label className="mb-1 block text-sm font-medium">{label}</label>
+                    <Input
+                      value={specialtyFields.eyeClinic?.[field] || ''}
+                      onChange={(event) => updateEyeClinicField(field, event.target.value)}
+                      placeholder={placeholder}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {[
+                  ['anteriorSegment', 'Anterior Segment Findings'],
+                  ['posteriorSegment', 'Posterior Segment Findings'],
+                  ['eyeDiagnosis', 'Eye Diagnosis'],
+                  ['recommendations', 'Recommendations'],
+                ].map(([field, label]) => (
+                  <div key={field}>
+                    <label className="mb-1 block text-sm font-medium">{label}</label>
+                    <textarea
+                      value={specialtyFields.eyeClinic?.[field as keyof NonNullable<ConsultationSpecialtyFields['eyeClinic']>] || ''}
+                      onChange={(event) =>
+                        updateEyeClinicField(
+                          field as keyof NonNullable<ConsultationSpecialtyFields['eyeClinic']>,
+                          event.target.value
+                        )
+                      }
+                      rows={3}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isFamilyMedicalConsultation && (
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-slate-950">
+                  {activeClinicType === 'small_hospital' ? 'Small Hospital Medical Fields' : 'Family Medical Fields'}
+                </h3>
+                <p className="text-sm text-slate-500">Record vitals, clinical review, assessment, and medical plan.</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ['bloodPressure', 'Blood Pressure', 'e.g. 120/80'],
+                  ['temperature', 'Temperature', 'e.g. 37.0 C'],
+                  ['pulse', 'Pulse', 'bpm'],
+                  ['respiratoryRate', 'Resp. Rate', '/min'],
+                  ['oxygenSaturation', 'Oxygen Sat.', '%'],
+                  ['weight', 'Weight', 'kg'],
+                  ['height', 'Height', 'cm'],
+                ].map(([field, label, placeholder]) => (
+                  <div key={field}>
+                    <label className="mb-1 block text-sm font-medium">{label}</label>
+                    <Input
+                      value={specialtyFields.familyMedical?.[field as keyof NonNullable<ConsultationSpecialtyFields['familyMedical']>] || ''}
+                      onChange={(event) =>
+                        updateFamilyMedicalField(
+                          field as keyof NonNullable<ConsultationSpecialtyFields['familyMedical']>,
+                          event.target.value
+                        )
+                      }
+                      placeholder={placeholder}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                {[
+                  ['systemicReview', 'Systemic Review'],
+                  ['assessment', 'Assessment'],
+                  ['medicalPlan', 'Medical Plan'],
+                ].map(([field, label]) => (
+                  <div key={field}>
+                    <label className="mb-1 block text-sm font-medium">{label}</label>
+                    <textarea
+                      value={specialtyFields.familyMedical?.[field as keyof NonNullable<ConsultationSpecialtyFields['familyMedical']>] || ''}
+                      onChange={(event) =>
+                        updateFamilyMedicalField(
+                          field as keyof NonNullable<ConsultationSpecialtyFields['familyMedical']>,
+                          event.target.value
+                        )
+                      }
+                      rows={4}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isDentalConsultation && (
+            <div>
             <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Chart</h3>
@@ -754,6 +1106,7 @@ export default function ConsultationForm({
               ))}
             </div>
           </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1">Additional Notes</label>
@@ -890,7 +1243,9 @@ export default function ConsultationForm({
             <div className="space-y-3">
               {procedures.map((procedure, index) => {
                 const category = procedure.category || getProcedureCategory(procedure.procedure);
-                const group = PROCEDURE_GROUPS.find((item) => item.category === category) || PROCEDURE_GROUPS[0];
+                const group =
+                  activeProcedureGroups.find((item) => item.category === category) ||
+                  activeProcedureGroups[0];
 
                 return (
                   <div key={index} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[1fr_1fr_0.8fr_auto]">
@@ -898,33 +1253,41 @@ export default function ConsultationForm({
                       <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
                         Category
                       </label>
-                      <select
+                      <Select
                         value={category}
-                        onChange={(event) => updateProcedureCategory(index, event.target.value)}
-                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onValueChange={(value) => updateProcedureCategory(index, value)}
                       >
-                        {PROCEDURE_GROUPS.map((groupOption) => (
-                          <option key={groupOption.category} value={groupOption.category}>
+                        <SelectTrigger className="mt-1 w-full bg-white">
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                        {activeProcedureGroups.map((groupOption) => (
+                          <SelectItem key={groupOption.category} value={groupOption.category}>
                             {groupOption.category}
-                          </option>
+                          </SelectItem>
                         ))}
-                      </select>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div>
                       <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
                         Procedure
                       </label>
-                      <select
+                      <Select
                         value={procedure.procedure}
-                        onChange={(event) => updateProcedure(index, event.target.value)}
-                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onValueChange={(value) => updateProcedure(index, value)}
                       >
+                        <SelectTrigger className="mt-1 w-full bg-white">
+                          <SelectValue placeholder="Select procedure" />
+                        </SelectTrigger>
+                        <SelectContent>
                         {group.procedures.map((procedureOption) => (
-                          <option key={procedureOption} value={procedureOption}>
+                          <SelectItem key={procedureOption} value={procedureOption}>
                             {procedureOption}
-                          </option>
+                          </SelectItem>
                         ))}
-                      </select>
+                        </SelectContent>
+                      </Select>
                     </div>
                     {/* <div>
                       <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">

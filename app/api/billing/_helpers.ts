@@ -47,12 +47,15 @@ export function buildBillingItemsFromProcedures(procedures: ConsultationProcedur
 
 export async function upsertBillingForConsultation(consultation: any, billingItems: Partial<BillingItem>[] = []) {
   const items = normalizeBillingItems(billingItems);
+  const hospitalId = consultation.hospitalId || null;
+  const hospitalQuery = hospitalId ? { hospitalId } : { hospitalId: null };
+  const consultationId = String(consultation._id || consultation.id);
 
   const [patient, doctor, existingBill, billCount] = await Promise.all([
-    Patient.findById(consultation.patientId).lean(),
-    Doctor.findById(consultation.doctorId).lean(),
-    Billing.findOne({ consultationId: String(consultation._id || consultation.id) }),
-    Billing.countDocuments(),
+    Patient.findOne({ ...hospitalQuery, _id: consultation.patientId }).lean(),
+    Doctor.findOne({ ...hospitalQuery, _id: consultation.doctorId }).lean(),
+    Billing.findOne({ ...hospitalQuery, consultationId }),
+    Billing.countDocuments(hospitalQuery),
   ]);
 
   if (items.length === 0 && !existingBill) {
@@ -77,6 +80,7 @@ export async function upsertBillingForConsultation(consultation: any, billingIte
   });
 
   const update = {
+    hospitalId,
     clinicName: existingBill?.clinicName || CLINIC_NAME,
     invoiceNumber: existingBill?.invoiceNumber || buildInvoiceNumber(billCount),
     patientId: consultation.patientId,
@@ -85,7 +89,7 @@ export async function upsertBillingForConsultation(consultation: any, billingIte
       [patient?.firstName, patient?.lastName].filter(Boolean).join(' ') ||
       'Patient',
     patientMrn: patient?.mrn || '',
-    consultationId: String(consultation._id || consultation.id),
+    consultationId,
     doctorId: consultation.doctorId,
     doctorName: consultation.doctorName || doctor?.name || '',
     consultationDate: consultation.createdAt || new Date(),
@@ -97,7 +101,7 @@ export async function upsertBillingForConsultation(consultation: any, billingIte
   };
 
   const bill = await Billing.findOneAndUpdate(
-    { consultationId: String(consultation._id || consultation.id) },
+    { ...hospitalQuery, consultationId },
     { $set: update },
     { new: true, upsert: true, runValidators: true }
   );
@@ -110,8 +114,8 @@ export async function upsertBillingForConsultation(consultation: any, billingIte
 export async function syncConsultationBillingSnapshot(bill: any) {
   if (!bill?.consultationId) return null;
 
-  return Consultation.findByIdAndUpdate(
-    bill.consultationId,
+  return Consultation.findOneAndUpdate(
+    { _id: bill.consultationId, hospitalId: bill.hospitalId || null },
     {
       paymentAmount: roundMoney(bill.totalAmount || 0),
       paymentStatus: toConsultationPaymentStatus(String(bill.paymentStatus || 'Pending Billing')),

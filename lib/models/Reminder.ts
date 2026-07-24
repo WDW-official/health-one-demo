@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IReminder extends Document {
+  hospitalId?: string | null;
   appointmentId?: string;
   patientId: string;
   doctorId?: string;
@@ -19,6 +20,11 @@ export interface IReminder extends Document {
 
 const reminderSchema = new Schema<IReminder>(
   {
+    hospitalId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     appointmentId: {
       type: String,
       default: null,
@@ -85,5 +91,6 @@ const reminderSchema = new Schema<IReminder>(
 
 reminderSchema.index({ patientId: 1, category: 1, scheduledFor: 1 });
 reminderSchema.index({ doctorId: 1, category: 1, scheduledFor: 1 });
+reminderSchema.index({ hospitalId: 1, category: 1, scheduledFor: 1 });
 
 export default mongoose.models.Reminder || mongoose.model<IReminder>('Reminder', reminderSchema);

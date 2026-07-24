@@ -10,6 +10,7 @@ import { getErrorMessage } from '@/lib/error-message';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingState } from '@/components/loading-state';
 import { toast } from '@/hooks/use-toast';
 
@@ -278,23 +279,26 @@ export default function DashboardChatPage() {
               className="pl-9"
             />
           </div>
-          <select
+          <Select
             value={selectedUser?.id || ''}
-            onChange={(event) => {
-              const nextUser = chatUsers.find((chatUser) => chatUser.id === event.target.value);
+            onValueChange={(value) => {
+              const nextUser = chatUsers.find((chatUser) => chatUser.id === value);
               if (nextUser) handleSelectUser(nextUser);
             }}
-            className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
             disabled={isLoadingUsers || displayedChatUsers.length === 0}
           >
-            <option value="">Select user</option>
+            <SelectTrigger className="h-11 w-full">
+              <SelectValue placeholder="Select user" />
+            </SelectTrigger>
+            <SelectContent>
             {displayedChatUsers.map((chatUser) => (
-              <option key={chatUser.id} value={chatUser.id}>
+              <SelectItem key={chatUser.id} value={chatUser.id}>
                 {chatUser.unreadCount ? `(${chatUser.unreadCount} new) ` : ''}
                 {chatUser.name} - {chatUser.role}
-              </option>
+              </SelectItem>
             ))}
-          </select>
+            </SelectContent>
+          </Select>
         </CardContent>
       </Card>
 

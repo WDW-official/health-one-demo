@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Patient from '@/lib/models/Patient';
 import { jsonError, jsonOk } from '../../_lib/response';
+import { buildHospitalQuery, getRequestUser } from '../../_lib/request-auth';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,6 +10,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q')?.trim();
+    const user = getRequestUser(request);
 
     if (!query || query.trim().length < 2) {
       return NextResponse.json(
@@ -18,7 +20,7 @@ export async function GET(request: NextRequest) {
     }
 
     const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const patients = await Patient.find({
+    const patients = await Patient.find(buildHospitalQuery(user, {
       isActive: true,
       $or: [
         { mrn: { $regex: escaped, $options: 'i' } },
@@ -27,7 +29,7 @@ export async function GET(request: NextRequest) {
         { email: { $regex: escaped, $options: 'i' } },
         { phone: { $regex: escaped, $options: 'i' } },
       ],
-    })
+    }))
       .sort({ createdAt: -1 })
       .limit(20);
 

@@ -72,14 +72,14 @@ export function parseProcedureConsumableSeed() {
     });
 }
 
-export async function ensureProcedureConsumableTemplates() {
+export async function ensureProcedureConsumableTemplates(hospitalId: string | null = null) {
   const templates = parseProcedureConsumableSeed();
 
   await Promise.all(
     templates.map((template) =>
       ProcedureConsumableTemplate.findOneAndUpdate(
-        { procedureKey: template.procedureKey },
-        { $set: template },
+        { hospitalId, procedureKey: template.procedureKey },
+        { $set: { ...template, hospitalId } },
         { new: true, upsert: true, runValidators: true }
       )
     )
@@ -105,10 +105,10 @@ function defaultUsedAmount() {
   return 0;
 }
 
-export async function seedInventoryItemsFromProcedureConsumables() {
-  await ensureProcedureConsumableTemplates();
+export async function seedInventoryItemsFromProcedureConsumables(hospitalId: string | null = null) {
+  await ensureProcedureConsumableTemplates(hospitalId);
 
-  const templates = await ProcedureConsumableTemplate.find({ isActive: true }).lean();
+  const templates = await ProcedureConsumableTemplate.find({ hospitalId, isActive: true }).lean();
   const itemMap = new Map<string, { name: string; unit: string }>();
 
   templates.forEach((template: any) => {
@@ -127,11 +127,15 @@ export async function seedInventoryItemsFromProcedureConsumables() {
 
   let created = 0;
   for (const item of itemMap.values()) {
-    const existing = await Inventory.findOne({ name: { $regex: `^${item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
+    const existing = await Inventory.findOne({
+      hospitalId,
+      name: { $regex: `^${item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+    });
     if (existing) continue;
 
     await Inventory.create({
       name: item.name,
+      hospitalId,
       category: 'Supplies',
       quantity: 240,
       unit: item.unit,
@@ -164,9 +168,10 @@ function mergeUsage(
 }
 
 export async function estimateConsultationConsumables(
-  procedures: ConsultationProcedure[] = []
+  procedures: ConsultationProcedure[] = [],
+  hospitalId: string | null = null
 ) {
-  await ensureProcedureConsumableTemplates();
+  await ensureProcedureConsumableTemplates(hospitalId);
 
   const procedureKeys = procedures
     .filter((item) => item.status !== 'cancelled')
@@ -176,13 +181,14 @@ export async function estimateConsultationConsumables(
   if (procedureKeys.length === 0) return [];
 
   const templates = await ProcedureConsumableTemplate.find({
+    hospitalId,
     procedureKey: { $in: procedureKeys },
     isActive: true,
   }).lean();
 
   let allTemplates = templates;
   if (templates.length !== procedureKeys.length) {
-    allTemplates = await ProcedureConsumableTemplate.find({ isActive: true }).lean();
+    allTemplates = await ProcedureConsumableTemplate.find({ hospitalId, isActive: true }).lean();
   }
 
   const templateMap = new Map(allTemplates.map((template: any) => [template.procedureKey, template]));
@@ -218,6 +224,7 @@ export async function estimateConsultationConsumables(
 
   const usage = Array.from(usageMap.values());
   const inventory = await Inventory.find({
+    hospitalId,
     name: {
       $in: usage.map((item) => new RegExp(`^${item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')),
     },
@@ -247,6 +254,7 @@ function inventoryItemKey(value: string) {
 
 export async function deductConsultationConsumables(consultation: any, user?: any) {
   const consultationId = String(consultation?._id || consultation?.id || '');
+  const hospitalId = consultation?.hospitalId || user?.hospitalId || null;
   if (!consultationId || consultation.consumablesDeductedAt) {
     return { deducted: false, reason: 'already-deducted-or-missing-consultation' };
   }
@@ -262,13 +270,14 @@ export async function deductConsultationConsumables(consultation: any, user?: an
   const usage =
     actualConsumables.length > 0
       ? actualConsumables.map((item: any) => ({ ...item, source: 'actual' }))
-      : await estimateConsultationConsumables(completedProcedures);
+      : await estimateConsultationConsumables(completedProcedures, hospitalId);
 
   if (usage.length === 0) {
     return { deducted: false, reason: 'no-usage' };
   }
 
   const inventory = await Inventory.find({
+    hospitalId,
     name: {
       $in: usage.map(
         (item: any) => new RegExp(`^${String(item.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
@@ -296,6 +305,7 @@ export async function deductConsultationConsumables(consultation: any, user?: an
 
     movements.push(
       await InventoryMovement.create({
+        hospitalId,
         inventoryItemId: String(stockItem._id),
         itemName: stockItem.name,
         category: stockItem.category,

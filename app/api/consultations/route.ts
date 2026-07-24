@@ -6,7 +6,7 @@ import Doctor from '@/lib/models/Doctor';
 import Patient from '@/lib/models/Patient';
 import { getNextAppointmentNumber } from '@/lib/appointment-number';
 import { jsonCreated, jsonError, jsonOk } from '../_lib/response';
-import { getPagination, getRequestUser } from '../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser, withHospitalId } from '../_lib/request-auth';
 import { getApiErrorMessage } from '../_lib/error-message';
 import {
   buildBillingItemsFromProcedures,
@@ -19,9 +19,15 @@ function toAppConsultation(doc: any) {
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
   return {
     ...plain,
+    clinicType: plain.clinicType ?? 'dental',
+    specialtyFields: plain.specialtyFields ?? {},
     presentingComplaints: plain.presentingComplaints ?? '',
     examination: plain.examination ?? '',
     treatmentPlan: plain.treatmentPlan ?? '',
+    clinicalNotes:
+      plain.clinicalNotes && plain.clinicalNotes.length > 0
+        ? plain.clinicalNotes
+        : buildLegacyClinicalNotes(plain),
     prescription: plain.prescription ?? plain.prescriptions ?? '',
     prescriptions: plain.prescriptions ?? plain.prescription ?? '',
     nextVisitDate: plain.nextVisitDate ?? plain.followUpDate ?? null,
@@ -35,6 +41,71 @@ function toAppConsultation(doc: any) {
     chartBlocks: plain.chartBlocks ?? [],
     attachments: plain.attachments ?? [],
   };
+}
+
+function buildClinicalNoteSnapshot(source: any, user: any) {
+  return {
+    enteredAt: new Date(),
+    enteredByUserId: user?.id || '',
+    enteredByName: user?.name || user?.email || '',
+    clinicType: source.clinicType ?? 'dental',
+    specialtyFields: source.specialtyFields ?? {},
+    presentingComplaints: source.presentingComplaints ?? '',
+    impressionDiagnosis: source.diagnosis ?? source.impressionDiagnosis ?? '',
+    treatmentPlan: source.treatmentPlan ?? '',
+    notes: source.notes ?? '',
+  };
+}
+
+function buildLegacyClinicalNotes(source: any) {
+  const hasClinicalContent = [
+    source.presentingComplaints,
+    source.diagnosis,
+    source.treatmentPlan,
+    source.notes,
+  ].some((value) => String(value || '').trim().length > 0);
+
+  if (!hasClinicalContent) return [];
+
+  return [
+    {
+      enteredAt: source.createdAt || source.updatedAt || new Date(),
+      enteredByUserId: '',
+      enteredByName: source.doctorName || '',
+      clinicType: source.clinicType ?? 'dental',
+      specialtyFields: source.specialtyFields ?? {},
+      presentingComplaints: source.presentingComplaints ?? '',
+      impressionDiagnosis: source.diagnosis ?? '',
+      treatmentPlan: source.treatmentPlan ?? '',
+      notes: source.notes ?? '',
+    },
+  ];
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getDateRange(startDate?: string | null, endDate?: string | null) {
+  const range: Record<string, Date> = {};
+
+  if (startDate) {
+    const start = new Date(startDate);
+    if (!Number.isNaN(start.getTime())) {
+      start.setHours(0, 0, 0, 0);
+      range.$gte = start;
+    }
+  }
+
+  if (endDate) {
+    const end = new Date(endDate);
+    if (!Number.isNaN(end.getTime())) {
+      end.setHours(23, 59, 59, 999);
+      range.$lte = end;
+    }
+  }
+
+  return Object.keys(range).length > 0 ? range : null;
 }
 
 function getNextVisitDateTime(value: string | Date | null | undefined) {
@@ -62,11 +133,19 @@ export async function GET(request: NextRequest) {
     const { limit, skip } = getPagination(searchParams, 20, 200);
     const patientId = searchParams.get('patientId');
     const doctorId = searchParams.get('doctorId');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const diagnosis = searchParams.get('diagnosis')?.trim();
     const user = getRequestUser(request);
 
-    let query: any = {};
+    let query: any = buildHospitalQuery(user);
 
     if (patientId) query.patientId = patientId;
+    const createdAtRange = getDateRange(startDate, endDate);
+    if (createdAtRange) query.createdAt = createdAtRange;
+    if (diagnosis) {
+      query.diagnosis = { $regex: escapeRegex(diagnosis), $options: 'i' };
+    }
     if (user?.role === 'doctor') {
       if (doctorId && doctorId !== user.doctorId) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -99,6 +178,11 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
+    const user = getRequestUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
 
     const required = ['patientId', 'doctorId', 'diagnosis', 'treatment'];
@@ -113,19 +197,29 @@ export async function POST(request: NextRequest) {
 
     // Get doctor and patient names
     const [doctor, patient] = await Promise.all([
-      Doctor.findById(body.doctorId),
-      Patient.findById(body.patientId),
+      Doctor.findOne(buildHospitalQuery(user, { _id: body.doctorId })),
+      Patient.findOne(buildHospitalQuery(user, { _id: body.patientId })),
     ]);
 
+    if (!doctor || !patient) {
+      return NextResponse.json(
+        { error: 'Patient or doctor not found for this hospital' },
+        { status: 404 }
+      );
+    }
+
     const procedures = normalizeProcedureStatuses(body.procedures ?? []);
-    const estimatedConsumables = await estimateConsultationConsumables(procedures);
+    const estimatedConsumables = await estimateConsultationConsumables(procedures, user.hospitalId || null);
 
     const consultation = new Consultation({
-      ...body,
+      ...withHospitalId(user, body),
       appointmentId: body.appointmentId || '',
+      clinicType: body.clinicType || 'dental',
+      specialtyFields: body.specialtyFields ?? {},
       presentingComplaints: body.presentingComplaints ?? '',
       examination: body.examination ?? '',
       treatmentPlan: body.treatmentPlan ?? '',
+      clinicalNotes: [buildClinicalNoteSnapshot(body, user)],
       procedures,
       estimatedConsumables,
       actualConsumables: body.actualConsumables ?? [],
@@ -146,6 +240,7 @@ export async function POST(request: NextRequest) {
     if (nextVisitDateTime && nextVisitDateTime.getTime() >= Date.now()) {
       const appointmentNumber = await getNextAppointmentNumber(body.patientId, patient?.mrn);
       nextAppointment = await Appointment.create({
+        hospitalId: user.hospitalId || null,
         appointmentNumber,
         patientId: body.patientId,
         doctorId: body.doctorId,

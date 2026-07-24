@@ -9,8 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Spinner } from '@/components/ui/spinner';
 import { AuthLogo } from '@/components/auth-logo';
 import { ApiClient } from '@/lib/api-client';
-import { setAuthToken, setCurrentUser } from '@/lib/auth';
+import { setAuthToken, setCurrentUser, startAuthSession } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/error-message';
+import { getHospitalDashboardPath } from '@/lib/tenant-routing';
 import { toast } from '@/hooks/use-toast';
 import { AlertCircle } from 'lucide-react';
 
@@ -38,11 +39,15 @@ export default function LoginPage() {
         if (result.token) {
           setAuthToken(result.token);
         }
+        startAuthSession(result.user);
         toast({
           title: 'Welcome back',
           description: `Signed in as ${result.user.name}.`,
         });
-        router.push('/dashboard');
+        if (result.user.isSuperAdmin) {
+          ApiClient.setActiveHospital(null);
+        }
+        router.push(result.user.isSuperAdmin ? '/platform' : getHospitalDashboardPath(result.user));
       } else {
         const message = 'Invalid email or password';
         setError(message);

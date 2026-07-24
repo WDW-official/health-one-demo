@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IInventory extends Document {
+  hospitalId?: string | null;
   name: string;
   category: string;
   quantity: number;
@@ -26,6 +27,7 @@ export function calculateInventoryStatus(quantity: number, reorderLevel: number)
 
 const InventorySchema: Schema = new Schema(
   {
+    hospitalId: { type: String, default: null, index: true },
     name: { type: String, required: true, trim: true },
     category: { type: String, required: true, trim: true },
     quantity: { type: Number, required: true, default: 0 },
@@ -59,6 +61,10 @@ const InventorySchema: Schema = new Schema(
     },
   }
 );
+
+InventorySchema.index({ hospitalId: 1, name: 1 });
+InventorySchema.index({ hospitalId: 1, status: 1 });
+InventorySchema.index({ hospitalId: 1, lastUpdated: -1 });
 
 InventorySchema.pre<IInventory>('save', function () {
   this.status = calculateInventoryStatus(this.quantity, this.reorderLevel);

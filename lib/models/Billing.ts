@@ -3,6 +3,7 @@ import { HMO_CLAIM_STATUSES, PAYMENT_STATUSES } from '@/lib/billing-utils';
 import type { HmoClaimStatus, PaymentMethod, PaymentStatus } from '@/lib/types';
 
 export interface IBilling extends Document {
+  hospitalId?: string | null;
   invoiceNumber: string;
   clinicName: string;
   patientId: string;
@@ -90,6 +91,7 @@ const paymentSchema = new Schema(
 
 const billingSchema = new Schema<IBilling>(
   {
+    hospitalId: { type: String, default: null, index: true },
     invoiceNumber: { type: String, required: true, unique: true, index: true },
     clinicName: { type: String, required: true, default: 'Health One' },
     patientId: { type: String, required: true, index: true },
@@ -129,5 +131,9 @@ const billingSchema = new Schema<IBilling>(
   },
   { timestamps: true }
 );
+
+billingSchema.index({ hospitalId: 1, consultationDate: -1 });
+billingSchema.index({ hospitalId: 1, patientId: 1, consultationDate: -1 });
+billingSchema.index({ hospitalId: 1, paymentStatus: 1 });
 
 export default mongoose.models.Billing || mongoose.model<IBilling>('Billing', billingSchema);

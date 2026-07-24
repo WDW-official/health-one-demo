@@ -4,7 +4,7 @@ import Appointment from '@/lib/models/Appointment';
 import Patient from '@/lib/models/Patient';
 import Reminder from '@/lib/models/Reminder';
 import { jsonCreated, jsonError, jsonOk } from '../_lib/response';
-import { getRequestUser } from '../_lib/request-auth';
+import { buildHospitalQuery, getRequestUser, withHospitalId } from '../_lib/request-auth';
 
 function normalizeReminder(doc: any) {
   if (!doc) return doc;
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get('category');
     const user = getRequestUser(request);
 
-    let query: Record<string, any> = {};
+    let query: Record<string, any> = buildHospitalQuery(user);
 
     if (patientId) query.patientId = patientId;
     if (appointmentId) query.appointmentId = appointmentId;
@@ -109,8 +109,8 @@ export async function POST(request: NextRequest) {
     }
 
     const [patient, appointment] = await Promise.all([
-      Patient.findById(patientId),
-      appointmentId ? Appointment.findById(appointmentId) : Promise.resolve(null),
+      Patient.findOne(buildHospitalQuery(user, { _id: patientId })),
+      appointmentId ? Appointment.findOne(buildHospitalQuery(user, { _id: appointmentId })) : Promise.resolve(null),
     ]);
 
     if (!patient) {
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    let reminderPayload: any = {
+    let reminderPayload: any = withHospitalId(user, {
       patientId,
       appointmentId: appointmentId || undefined,
       doctorId: body.doctorId || appointment?.doctorId || patient.assignedDoctorId || user.doctorId,
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       reminderType,
       status: 'draft',
       isRead: false,
-    };
+    });
 
     if (category === 'appointment' && appointment) {
       const patientName = `${patient.firstName} ${patient.lastName}`;

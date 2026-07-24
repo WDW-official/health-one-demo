@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   AlertCircle,
   MoreHorizontal,
+  CalendarDays,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingState } from '@/components/loading-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import {
@@ -47,6 +49,7 @@ import { getErrorMessage } from '@/lib/error-message';
 import { getCurrentUser } from '@/lib/auth';
 import { Patient, User } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
+import { withHospitalDashboardPath } from '@/lib/tenant-routing';
 
 const PAGE_SIZE = 10;
 
@@ -310,6 +313,10 @@ export default function PatientsPage() {
   const firstPatientNumber = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const lastPatientNumber = Math.min(page * PAGE_SIZE, total);
   const canDeletePatients = Boolean(user?.role === 'admin' && user.isSuperAdmin);
+  const activeHospital = ApiClient.getActiveHospital();
+  const routeUser = user
+    ? { ...user, hospitalSlug: activeHospital?.slug || user.hospitalSlug || null }
+    : user;
 
   return (
     <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden">
@@ -326,6 +333,12 @@ export default function PatientsPage() {
         </div>
         {user?.role === 'admin' && (
           <div className="flex flex-wrap justify-end gap-2">
+            <Link href={withHospitalDashboardPath('/dashboard/patients/birthdays', routeUser)}>
+              <Button type="button" variant="outline">
+                <CalendarDays className="w-4 h-4 mr-2" />
+                Birthday Calendar
+              </Button>
+            </Link>
             <Button
               type="button"
               variant="outline"
@@ -493,29 +506,37 @@ export default function PatientsPage() {
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">Family Status</label>
-                  <select
+                  <Select
                     value={legacyForm.familyStatus}
-                    onChange={(event) => updateLegacyField('familyStatus', event.target.value)}
                     disabled={savingLegacyPatient}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    onValueChange={(value) => updateLegacyField('familyStatus', value)}
                   >
-                    <option value="individual">Individual</option>
-                    <option value="family">Family</option>
-                  </select>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select family status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="individual">Individual</SelectItem>
+                      <SelectItem value="family">Family</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">Sex</label>
-                  <select
-                    value={legacyForm.sex}
-                    onChange={(event) => updateLegacyField('sex', event.target.value)}
+                  <Select
+                    value={legacyForm.sex || 'not_provided'}
                     disabled={savingLegacyPatient}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    onValueChange={(value) => updateLegacyField('sex', value === 'not_provided' ? '' : value)}
                   >
-                    <option value="">Not provided</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </select>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select sex" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="not_provided">Not provided</SelectItem>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">Phone Number</label>

@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/pagination';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingState } from '@/components/loading-state';
 import { Spinner } from '@/components/ui/spinner';
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -67,7 +68,7 @@ export default function UsersPage() {
       return;
     }
 
-    if (currentUser.role !== 'admin' || !currentUser.isSuperAdmin) {
+    if (currentUser.role !== 'admin') {
       router.replace('/dashboard');
     }
   }, [currentUser, router]);
@@ -129,7 +130,7 @@ export default function UsersPage() {
     };
   }, [userPage, userSearchTerm]);
 
-  const canCreateSuperAdmin = Boolean(currentUser?.isSuperAdmin);
+  const canCreateSuperAdmin = Boolean(currentUser?.isSuperAdmin && !currentUser.hospitalId);
   const isDoctorRole = form.role === 'doctor';
 
   const selectedDoctor = useMemo(
@@ -184,7 +185,7 @@ export default function UsersPage() {
         password: form.password,
         role: form.role,
         doctorId: isDoctorRole ? form.doctorId : undefined,
-        isSuperAdmin: form.role === 'admin' ? form.isSuperAdmin : false,
+        isSuperAdmin: canCreateSuperAdmin && form.role === 'admin' ? form.isSuperAdmin : false,
       });
 
       if (result?.user && userPage === 1 && !userSearchTerm) {
@@ -295,13 +296,13 @@ export default function UsersPage() {
               </Button> */}
               <div className="inline-flex items-center gap-2 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-teal-800">
                 <ShieldCheck className="h-3.5 w-3.5" />
-                Superadmin only
+                Admin access
               </div>
               <h1 className="text-3xl font-semibold tracking-tight text-slate-950 md:text-5xl">
                 User management
               </h1>
               <p className="max-w-2xl text-base leading-7 text-slate-600">
-                Add admin or doctor accounts, set superadmin access when needed, and require each new user to create their own password on first login.
+                Add admin or doctor accounts for this hospital and require each new user to create their own password on first login.
               </p>
             </div>
           </div>
@@ -314,7 +315,7 @@ export default function UsersPage() {
                   Current access
                 </p>
                 <p className="mt-2 text-sm font-medium text-slate-950">
-                  {currentUser.name} ({currentUser.isSuperAdmin ? 'Superadmin' : 'Admin'})
+                  {currentUser.name} ({currentUser.isSuperAdmin ? 'Superadmin' : 'Hospital admin'})
                 </p>
               </div>
               <div className="rounded-3xl border border-white/70 bg-white/80 p-4">
@@ -383,14 +384,18 @@ export default function UsersPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-700">Role</label>
-                  <select
+                  <Select
                     value={form.role}
-                    onChange={(e) => handleRoleChange(e.target.value as CreateUserRole)}
-                    className="h-12 w-full rounded-2xl border border-slate-200 bg-white/80 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                    onValueChange={(value) => handleRoleChange(value as CreateUserRole)}
                   >
-                    <option value="admin">Admin</option>
-                    <option value="doctor">Doctor</option>
-                  </select>
+                    <SelectTrigger className="h-12 w-full rounded-2xl bg-white/80">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="doctor">Doctor</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {isDoctorRole && (
@@ -531,7 +536,7 @@ export default function UsersPage() {
                 Superadmin
               </p>
               <p className="mt-2 text-sm font-medium text-slate-950">
-                {form.isSuperAdmin ? 'Yes' : 'No'}
+                {canCreateSuperAdmin && form.isSuperAdmin ? 'Yes' : 'No'}
               </p>
             </div>
           </CardContent>

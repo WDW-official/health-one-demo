@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IProcedureConsumableTemplate extends Document {
+  hospitalId?: string | null;
   category: string;
   procedure: string;
   procedureKey: string;
@@ -29,6 +30,7 @@ const consumableSchema = new Schema(
 
 const procedureConsumableTemplateSchema = new Schema<IProcedureConsumableTemplate>(
   {
+    hospitalId: { type: String, default: null, index: true },
     category: { type: String, required: true, trim: true, index: true },
     procedure: { type: String, required: true, trim: true },
     procedureKey: { type: String, required: true, unique: true, index: true },
@@ -39,6 +41,9 @@ const procedureConsumableTemplateSchema = new Schema<IProcedureConsumableTemplat
   },
   { timestamps: true }
 );
+
+procedureConsumableTemplateSchema.index({ hospitalId: 1, procedureKey: 1 });
+procedureConsumableTemplateSchema.index({ hospitalId: 1, category: 1 });
 
 export default mongoose.models.ProcedureConsumableTemplate ||
   mongoose.model<IProcedureConsumableTemplate>(

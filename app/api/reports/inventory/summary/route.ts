@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Inventory from '@/lib/models/Inventory';
-import { getRequestUser } from '@/app/api/_lib/request-auth';
+import { buildHospitalQuery, getRequestUser } from '@/app/api/_lib/request-auth';
 import { jsonOk, jsonError } from '@/app/api/_lib/response';
 
 export async function GET(req: NextRequest) {
@@ -13,12 +13,13 @@ export async function GET(req: NextRequest) {
 
     const recentCutoff = new Date();
     recentCutoff.setDate(recentCutoff.getDate() - 7);
+    const tenantQuery = buildHospitalQuery(user);
 
     const [totalItems, lowStockCount, needsReviewCount, recentlyUpdatedCount] = await Promise.all([
-      Inventory.countDocuments(),
-      Inventory.countDocuments({ status: { $in: ['low-stock', 'out-of-stock'] } }),
-      Inventory.countDocuments({ status: 'needs-review' }),
-      Inventory.countDocuments({ lastUpdated: { $gte: recentCutoff } }),
+      Inventory.countDocuments(tenantQuery),
+      Inventory.countDocuments({ ...tenantQuery, status: { $in: ['low-stock', 'out-of-stock'] } }),
+      Inventory.countDocuments({ ...tenantQuery, status: 'needs-review' }),
+      Inventory.countDocuments({ ...tenantQuery, lastUpdated: { $gte: recentCutoff } }),
     ]);
 
     return jsonOk({

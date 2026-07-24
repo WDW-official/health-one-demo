@@ -1,16 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import User from '@/lib/models/User';
-import { verifyToken } from '@/lib/jwt';
-
-function getBearerToken(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return null;
-  }
-
-  return authHeader.slice(7);
-}
+import { buildHospitalQuery, getRequestUser, getUserHospitalId } from '@/app/api/_lib/request-auth';
 
 function serializeUser(user: any) {
   return {
@@ -19,6 +10,8 @@ function serializeUser(user: any) {
     name: user.name,
     role: user.role,
     doctorId: user.doctorId,
+    hospitalId: user.hospitalId,
+    hospitalSlug: user.hospitalSlug,
     isSuperAdmin: user.isSuperAdmin,
     isActive: user.isActive !== false,
     mustChangePassword: Boolean(user.mustChangePassword),
@@ -33,10 +26,9 @@ function escapeRegex(value: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = getBearerToken(request);
-    const payload = token ? verifyToken(token) : null;
+    const payload = getRequestUser(request);
 
-    if (!payload || payload.role !== 'admin' || !payload.isSuperAdmin) {
+    if (!payload || payload.role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -48,7 +40,7 @@ export async function GET(request: NextRequest) {
     const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 10;
     const skip = Number.isFinite(rawSkip) ? Math.max(rawSkip, 0) : 0;
     const search = searchParams.get('search')?.trim();
-    const query = search
+    const searchQuery = search
       ? {
           $or: [
             { name: { $regex: escapeRegex(search), $options: 'i' } },
@@ -57,6 +49,7 @@ export async function GET(request: NextRequest) {
           ],
         }
       : {};
+    const query = buildHospitalQuery(payload, searchQuery);
 
     const [users, total, activeTotal] = await Promise.all([
       User.find(query)
@@ -68,8 +61,12 @@ export async function GET(request: NextRequest) {
       User.countDocuments({ ...query, isActive: { $ne: false } }),
     ]);
 
-    const userTotal = await User.countDocuments();
-    const activeUserTotal = await User.countDocuments({ isActive: { $ne: false } });
+    const baseQuery = buildHospitalQuery(payload);
+    const userTotal = await User.countDocuments(baseQuery);
+    const activeUserTotal = await User.countDocuments({
+      ...baseQuery,
+      isActive: { $ne: false },
+    });
 
     return NextResponse.json({
       users: users.map(serializeUser),
@@ -88,10 +85,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const token = getBearerToken(request);
-    const payload = token ? verifyToken(token) : null;
+    const payload = getRequestUser(request);
 
-    if (!payload || payload.role !== 'admin' || !payload.isSuperAdmin) {
+    if (!payload || payload.role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -103,10 +99,20 @@ export async function POST(request: NextRequest) {
       name?: string;
       role?: 'admin' | 'doctor';
       doctorId?: string;
+      hospitalId?: string;
+      hospitalSlug?: string;
       isSuperAdmin?: boolean;
     };
 
-    const { email, password, name, role, doctorId, isSuperAdmin } = body;
+    const { email, password, name, role, doctorId, hospitalId, hospitalSlug, isSuperAdmin } = body;
+    const requesterHospitalId = getUserHospitalId(payload);
+    const nextHospitalId = payload.isSuperAdmin && !requesterHospitalId ? hospitalId || null : requesterHospitalId;
+    const nextHospitalSlug = payload.isSuperAdmin && !requesterHospitalId
+      ? hospitalSlug || null
+      : payload.activeHospitalSlug || payload.hospitalSlug || hospitalSlug || null;
+    const nextIsSuperAdmin = payload.isSuperAdmin && !requesterHospitalId && role === 'admin'
+      ? Boolean(isSuperAdmin)
+      : false;
 
     if (!email || !password || !name || !role) {
       return NextResponse.json(
@@ -140,7 +146,9 @@ export async function POST(request: NextRequest) {
       name,
       role,
       doctorId: role === 'doctor' ? doctorId : null,
-      isSuperAdmin: role === 'admin' ? Boolean(isSuperAdmin) : false,
+      hospitalId: nextHospitalId,
+      hospitalSlug: nextHospitalSlug,
+      isSuperAdmin: nextIsSuperAdmin,
       mustChangePassword: true,
     });
 
@@ -155,6 +163,8 @@ export async function POST(request: NextRequest) {
           name: user.name,
           role: user.role,
           doctorId: user.doctorId,
+          hospitalId: user.hospitalId,
+          hospitalSlug: user.hospitalSlug,
           isSuperAdmin: user.isSuperAdmin,
           isActive: user.isActive,
           mustChangePassword: user.mustChangePassword,

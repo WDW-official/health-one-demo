@@ -12,12 +12,69 @@ export function getBearerToken(request: NextRequest) {
 
 export function getRequestUser(request: NextRequest): JWTPayload | null {
   const token = getBearerToken(request);
-  return token ? verifyToken(token) : null;
+  const payload = token ? verifyToken(token) : null;
+  if (!payload) return null;
+
+  const activeHospitalId = request.headers.get('x-healthone-hospital-id');
+  const activeHospitalSlug = request.headers.get('x-healthone-hospital-slug');
+
+  if (isPlatformUser(payload) && activeHospitalId) {
+    return {
+      ...payload,
+      activeHospitalId,
+      activeHospitalSlug: activeHospitalSlug || null,
+    };
+  }
+
+  return payload;
 }
 
 export function hasSuperAdminAccess(request: NextRequest) {
   const user = getRequestUser(request);
   return Boolean(user?.role === 'admin' && user.isSuperAdmin);
+}
+
+export function isPlatformUser(user: JWTPayload | null | undefined) {
+  return Boolean(user?.role === 'admin' && user.isSuperAdmin);
+}
+
+export function getUserHospitalId(user: JWTPayload | null | undefined) {
+  return user?.activeHospitalId || user?.hospitalId || null;
+}
+
+export function buildHospitalQuery<T extends Record<string, unknown>>(
+  user: JWTPayload | null | undefined,
+  query: T = {} as T
+): T & { hospitalId?: string | null } {
+  if (isPlatformUser(user) && !user?.activeHospitalId) {
+    return {
+      ...query,
+      hospitalId: null,
+    };
+  }
+
+  const hospitalId = getUserHospitalId(user);
+  return {
+    ...query,
+    hospitalId,
+  };
+}
+
+export function withHospitalId<T extends Record<string, unknown>>(
+  user: JWTPayload | null | undefined,
+  data: T
+): T & { hospitalId?: string | null } {
+  if (isPlatformUser(user) && !user?.activeHospitalId) {
+    return {
+      ...data,
+      hospitalId: null,
+    };
+  }
+
+  return {
+    ...data,
+    hospitalId: getUserHospitalId(user),
+  };
 }
 
 export function getPagination(

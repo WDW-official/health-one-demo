@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Inventory from '@/lib/models/Inventory';
-import { getRequestUser } from '@/app/api/_lib/request-auth';
+import { buildHospitalQuery, getRequestUser } from '@/app/api/_lib/request-auth';
 import { jsonOk, jsonError } from '@/app/api/_lib/response';
 
 export async function GET(req: NextRequest) {
@@ -11,7 +11,8 @@ export async function GET(req: NextRequest) {
 
     await connectDB();
 
-    const items = await Inventory.find({ status: { $in: ['low-stock', 'out-of-stock'] } })
+    const query: any = buildHospitalQuery(user, { status: { $in: ['low-stock', 'out-of-stock'] } });
+    const items = await Inventory.find(query)
       .lean()
       .sort({ quantity: 1, name: 1 })
       .limit(20);

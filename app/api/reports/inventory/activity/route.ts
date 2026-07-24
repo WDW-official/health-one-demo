@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import InventoryMovement from '@/lib/models/InventoryMovement';
-import { getRequestUser } from '@/app/api/_lib/request-auth';
+import { buildHospitalQuery, getRequestUser } from '@/app/api/_lib/request-auth';
 import { jsonOk, jsonError } from '@/app/api/_lib/response';
 
 function movementDescription(movement: any) {
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
     await connectDB();
 
-    const movements = await InventoryMovement.find({})
+    const movements = await InventoryMovement.find(buildHospitalQuery(user))
       .lean()
       .sort({ createdAt: -1 })
       .limit(20);

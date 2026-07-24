@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Patient from '@/lib/models/Patient';
 import { jsonError, jsonOk } from '../../_lib/response';
-import { getRequestUser } from '../../_lib/request-auth';
+import { getRequestUser, getUserHospitalId } from '../../_lib/request-auth';
+import {
+  formatPatientMrn,
+  getHospitalMrnPrefix,
+  getMrnSequenceNumber,
+  normalizePatientMrn,
+} from '@/lib/patient-mrn';
 
 type ParsedRow = Record<string, string>;
 
@@ -153,15 +159,8 @@ function normalizeFamilyStatus(value: string | undefined) {
   return input === 'family' ? 'family' : 'individual';
 }
 
-function buildMrn(value: string | undefined) {
-  const input = (value || '').trim();
-  if (!input) return undefined;
-  return input.toUpperCase().startsWith('ARC') ? input.toUpperCase() : `ARC${input}`;
-}
-
-function getMrnNumber(mrn: string | undefined) {
-  const match = (mrn || '').match(/^ARC(\d+)$/i);
-  return match ? Number(match[1]) : 0;
+function buildMrn(value: string | undefined, prefix: string) {
+  return normalizePatientMrn(value, prefix);
 }
 
 function buildFallbackEmail() {
@@ -187,11 +186,11 @@ function buildLegacyNotes(row: ParsedRow) {
   return notes.join('\n');
 }
 
-function buildPatientData(row: ParsedRow) {
+function buildPatientData(row: ParsedRow, prefix: string) {
   const splitName = splitFullName(row.name);
   const firstName = row.firstname || splitName.firstName;
   const lastName = row.lastname || splitName.lastName;
-  const mrn = buildMrn(row.mrn || row.legacyid);
+  const mrn = buildMrn(row.mrn || row.legacyid, prefix);
   const dateOfBirth = row.dateofbirth || '1900-01-01';
   const normalizedGender = normalizeGender(row.gender);
   const gender = ['male', 'female', 'other'].includes(normalizedGender) ? normalizedGender : 'other';
@@ -239,32 +238,34 @@ function buildPatientData(row: ParsedRow) {
   return { patient, missing };
 }
 
-async function importPatientRows(rows: ParsedRow[], firstRowNumber = 2) {
+async function importPatientRows(rows: ParsedRow[], firstRowNumber = 2, hospitalId?: string | null) {
+  const prefix = await getHospitalMrnPrefix(hospitalId);
+  const mrnsFromRows = rows.map((row) => buildMrn(row.mrn || row.legacyid, prefix)).filter(Boolean);
   const existing = await Patient.find({
-    mrn: { $in: rows.map((row) => buildMrn(row.mrn || row.legacyid)).filter(Boolean) },
+    mrn: { $in: mrnsFromRows },
   })
     .select('mrn')
     .lean();
 
   const existingMrns = new Set(existing.map((patient: any) => (patient.mrn || '').trim().toUpperCase()));
-  const highestExistingMrn = await Patient.find({ mrn: /^ARC\d+$/i })
+  const highestExistingMrn = await Patient.find({
+    hospitalId: hospitalId || null,
+    mrn: new RegExp(`^${prefix}\\d{5}$`, 'i'),
+  })
     .select('mrn')
     .lean();
-  const csvMrns = rows
-    .map((row) => buildMrn(row.mrn || row.legacyid))
-    .filter(Boolean) as string[];
   let nextMrnNumber = Math.max(
     0,
-    ...highestExistingMrn.map((patient: any) => getMrnNumber(patient.mrn)),
-    ...csvMrns.map(getMrnNumber)
+    ...highestExistingMrn.map((patient: any) => getMrnSequenceNumber(patient.mrn, prefix)),
+    ...(mrnsFromRows as string[]).map((mrn) => getMrnSequenceNumber(mrn, prefix))
   );
 
   const getNextMrn = () => {
     do {
       nextMrnNumber += 1;
-    } while (existingMrns.has(`ARC${nextMrnNumber}`));
+    } while (existingMrns.has(formatPatientMrn(prefix, nextMrnNumber)));
 
-    return `ARC${nextMrnNumber}`;
+    return formatPatientMrn(prefix, nextMrnNumber);
   };
 
   const validPatients: any[] = [];
@@ -273,7 +274,7 @@ async function importPatientRows(rows: ParsedRow[], firstRowNumber = 2) {
 
   rows.forEach((row, index) => {
     const rowNumber = firstRowNumber + index;
-    const { patient, missing } = buildPatientData(row);
+    const { patient, missing } = buildPatientData(row, prefix);
 
     if (missing.length > 0) {
       skipped.push({ row: rowNumber, reason: `Missing required fields: ${missing.join(', ')}` });
@@ -306,6 +307,7 @@ async function importPatientRows(rows: ParsedRow[], firstRowNumber = 2) {
       mrn,
       email,
       phone,
+      hospitalId: hospitalId || null,
     });
   });
 
@@ -379,7 +381,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'The spreadsheet is empty or missing a header row.' }, { status: 400 });
     }
 
-    const { patientsToInsert, skipped, remappedMrns } = await importPatientRows(rows, firstRowNumber);
+    const { patientsToInsert, skipped, remappedMrns } = await importPatientRows(
+      rows,
+      firstRowNumber,
+      getUserHospitalId(user)
+    );
 
     if (patientsToInsert.length === 0) {
       return NextResponse.json(

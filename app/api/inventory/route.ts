@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Inventory from '@/lib/models/Inventory';
 import InventoryMovement from '@/lib/models/InventoryMovement';
-import { getRequestUser } from '@/app/api/_lib/request-auth';
+import { withHospitalId, getRequestUser } from '@/app/api/_lib/request-auth';
 import { jsonError, jsonCreated } from '@/app/api/_lib/response';
 import { getApiErrorMessage } from '@/app/api/_lib/error-message';
 
@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     const newStockItem = new Inventory({
+      ...withHospitalId(user, {}),
       name,
       category,
       quantity,
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
 
     await newStockItem.save();
     await InventoryMovement.create({
+      hospitalId: user.hospitalId || null,
       inventoryItemId: String(newStockItem._id),
       itemName: newStockItem.name,
       category: newStockItem.category,

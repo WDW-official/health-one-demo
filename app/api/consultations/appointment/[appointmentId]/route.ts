@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Consultation from '@/lib/models/Consultation';
 import { jsonError, jsonOk } from '../../../_lib/response';
+import { buildHospitalQuery, getRequestUser } from '../../../_lib/request-auth';
 
 function toAppConsultation(doc: any) {
   if (!doc) return doc;
@@ -23,7 +24,8 @@ export async function GET(
     await connectDB();
 
     const { appointmentId } = await params;
-    const consultation = await Consultation.findOne({ appointmentId }).lean();
+    const user = getRequestUser(request);
+    const consultation = await Consultation.findOne(buildHospitalQuery(user, { appointmentId })).lean();
 
     if (!consultation) {
       return jsonError('Consultation not found', 404);

@@ -37,6 +37,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingState } from '@/components/loading-state';
 import { ApiClient } from '@/lib/api-client';
 import {
@@ -625,66 +626,70 @@ export default function ReportsPage() {
 
       <Card>
         <CardContent className="grid gap-3 pt-6 md:grid-cols-4">
-          <select
+          <Select
             value={range}
-            onChange={(event) =>
-              setRange(
-                event.target.value as RangeFilter,
-              )
-            }
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            onValueChange={(value) => setRange(value as RangeFilter)}
           >
+            <SelectTrigger className="w-full bg-white">
+              <SelectValue placeholder="Select range" />
+            </SelectTrigger>
+            <SelectContent>
             {rangeOptions.map((option) => (
-              <option
+              <SelectItem
                 key={option.value}
                 value={option.value}
               >
                 {option.label}
-              </option>
+              </SelectItem>
             ))}
-          </select>
+            </SelectContent>
+          </Select>
 
-          <select
+          <Select
             value={doctorFilter}
-            onChange={(event) =>
-              setDoctorFilter(event.target.value)
-            }
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            onValueChange={setDoctorFilter}
           >
-            <option value="all">All doctors</option>
+            <SelectTrigger className="w-full bg-white">
+              <SelectValue placeholder="Select doctor" />
+            </SelectTrigger>
+            <SelectContent>
+            <SelectItem value="all">All doctors</SelectItem>
 
             {doctors.map((doctor) => (
-              <option
+              <SelectItem
                 key={doctor.id}
                 value={doctor.id}
               >
                 {doctor.name}
-              </option>
+              </SelectItem>
             ))}
-          </select>
+            </SelectContent>
+          </Select>
 
-          <select
+          <Select
             value={paymentFilter}
-            onChange={(event) =>
-              setPaymentFilter(event.target.value)
-            }
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            onValueChange={setPaymentFilter}
           >
-            <option value="all">
+            <SelectTrigger className="w-full bg-white">
+              <SelectValue placeholder="Select payment status" />
+            </SelectTrigger>
+            <SelectContent>
+            <SelectItem value="all">
               All payment statuses
-            </option>
+            </SelectItem>
 
             {Object.entries(paymentLabels).map(
               ([value, label]) => (
-                <option
+                <SelectItem
                   key={value}
                   value={value}
                 >
                   {label}
-                </option>
+                </SelectItem>
               ),
             )}
-          </select>
+            </SelectContent>
+          </Select>
 
           <Button
             variant="outline"

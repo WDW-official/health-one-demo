@@ -1,7 +1,10 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import type { PaymentStatus } from '@/lib/types';
+import type { ClinicType, ConsultationSpecialtyFields, PaymentStatus } from '@/lib/types';
 
 export interface IConsultation extends Document {
+  hospitalId?: string | null;
+  clinicType?: ClinicType;
+  specialtyFields?: ConsultationSpecialtyFields;
   appointmentId?: string;
   patientId: string;
   doctorId: string;
@@ -11,6 +14,17 @@ export interface IConsultation extends Document {
   examination?: string;
   diagnosis: string;
   treatmentPlan?: string;
+  clinicalNotes?: {
+    enteredAt: Date;
+    enteredByUserId?: string;
+    enteredByName?: string;
+    clinicType?: ClinicType;
+    specialtyFields?: ConsultationSpecialtyFields;
+    presentingComplaints?: string;
+    impressionDiagnosis?: string;
+    treatmentPlan?: string;
+    notes?: string;
+  }[];
   procedures?: {
     category: string;
     procedure: string;
@@ -69,6 +83,21 @@ export interface IConsultation extends Document {
 
 const consultationSchema = new Schema<IConsultation>(
   {
+    hospitalId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    clinicType: {
+      type: String,
+      enum: ['dental', 'family_medical', 'small_hospital', 'eye_clinic'],
+      default: 'dental',
+      index: true,
+    },
+    specialtyFields: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
     appointmentId: {
       type: String,
       default: '',
@@ -106,6 +135,26 @@ const consultationSchema = new Schema<IConsultation>(
     treatmentPlan: {
       type: String,
       default: '',
+    },
+    clinicalNotes: {
+      type: [
+        {
+          enteredAt: { type: Date, default: Date.now, index: true },
+          enteredByUserId: { type: String, default: '' },
+          enteredByName: { type: String, default: '' },
+          clinicType: {
+            type: String,
+            enum: ['dental', 'family_medical', 'small_hospital', 'eye_clinic'],
+            default: 'dental',
+          },
+          specialtyFields: { type: Schema.Types.Mixed, default: {} },
+          presentingComplaints: { type: String, default: '' },
+          impressionDiagnosis: { type: String, default: '' },
+          treatmentPlan: { type: String, default: '' },
+          notes: { type: String, default: '' },
+        },
+      ],
+      default: [],
     },
     procedures: {
       type: [
@@ -217,6 +266,10 @@ const consultationSchema = new Schema<IConsultation>(
   { timestamps: true }
 );
 
+consultationSchema.index({ hospitalId: 1, patientId: 1, createdAt: -1 });
+consultationSchema.index({ hospitalId: 1, doctorId: 1, createdAt: -1 });
+consultationSchema.index({ hospitalId: 1, appointmentId: 1 });
+
 const ExistingConsultation = mongoose.models.Consultation;
 
 if (ExistingConsultation) {
@@ -227,6 +280,51 @@ if (ExistingConsultation) {
       (validator: any) => validator.type !== 'required'
     );
     appointmentPath.defaultValue = '';
+  }
+
+  if (!ExistingConsultation.schema.path('clinicalNotes')) {
+    ExistingConsultation.schema.add({
+      clinicalNotes: {
+        type: [
+          {
+            enteredAt: { type: Date, default: Date.now, index: true },
+            enteredByUserId: { type: String, default: '' },
+            enteredByName: { type: String, default: '' },
+            clinicType: {
+              type: String,
+              enum: ['dental', 'family_medical', 'small_hospital', 'eye_clinic'],
+              default: 'dental',
+            },
+            specialtyFields: { type: Schema.Types.Mixed, default: {} },
+            presentingComplaints: { type: String, default: '' },
+            impressionDiagnosis: { type: String, default: '' },
+            treatmentPlan: { type: String, default: '' },
+            notes: { type: String, default: '' },
+          },
+        ],
+        default: [],
+      },
+    });
+  }
+
+  if (!ExistingConsultation.schema.path('clinicType')) {
+    ExistingConsultation.schema.add({
+      clinicType: {
+        type: String,
+        enum: ['dental', 'family_medical', 'small_hospital', 'eye_clinic'],
+        default: 'dental',
+        index: true,
+      },
+    });
+  }
+
+  if (!ExistingConsultation.schema.path('specialtyFields')) {
+    ExistingConsultation.schema.add({
+      specialtyFields: {
+        type: Schema.Types.Mixed,
+        default: {},
+      },
+    });
   }
 }
 

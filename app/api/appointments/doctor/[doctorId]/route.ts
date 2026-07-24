@@ -3,7 +3,7 @@ import { connectDB } from '@/lib/mongodb';
 import Appointment from '@/lib/models/Appointment';
 import { ensureAppointmentNumbers } from '@/lib/appointment-number';
 import { jsonError, jsonOk } from '../../../_lib/response';
-import { getPagination, getRequestUser } from '../../../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser } from '../../../_lib/request-auth';
 
 export async function GET(
   request: NextRequest,
@@ -20,13 +20,15 @@ export async function GET(
       return jsonError('Forbidden', 403);
     }
 
-    const appointments = (await Appointment.find({ doctorId })
+    const query = buildHospitalQuery(user, { doctorId });
+
+    const appointments = (await Appointment.find(query)
       .lean()
       .limit(limit)
       .skip(skip)
       .sort({ dateTime: -1 })) as any[];
 
-    const total = await Appointment.countDocuments({ doctorId });
+    const total = await Appointment.countDocuments(query);
     const normalized = await ensureAppointmentNumbers(appointments);
     return jsonOk(normalized, { appointments: normalized, total, limit, skip });
   } catch (error) {

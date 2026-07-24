@@ -1,9 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCurrentUser, logoutUser, refreshCurrentUser } from '@/lib/auth';
-import { ChatUser, User } from '@/lib/types';
+import {
+  adoptCurrentAuthSession,
+  AUTH_SESSION_KEY,
+  clearCurrentTabAuthSession,
+  getAuthSessionId,
+  getCurrentUser,
+  getTabAuthSessionId,
+  isCurrentTabAuthSessionActive,
+  logoutUser,
+  refreshCurrentUser,
+  startAuthSession,
+} from '@/lib/auth';
+import { ChatUser, Hospital, User } from '@/lib/types';
 import { ApiClient } from '@/lib/api-client';
 import {
   LayoutDashboard,
@@ -21,12 +32,26 @@ import {
   ClipboardCheck,
   BarChart3,
   CreditCard,
+  AlertTriangle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { BrandMark } from '@/components/brand-mark';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePathname } from 'next/navigation';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { getActiveClinicProfile, setActiveClinicProfile } from '@/lib/active-clinic-profile';
+import { CLINIC_TYPE_OPTIONS, getClinicTypeLabel, getClinicTypeLabels, normalizeClinicTypes } from '@/lib/clinic-config';
+import { withHospitalDashboardPath } from '@/lib/tenant-routing';
+import type { ClinicType } from '@/lib/types';
 
 interface SidebarLink {
   href: string;
@@ -39,6 +64,60 @@ interface SidebarLink {
 const IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 const LAST_ACTIVITY_KEY = 'clinic_last_activity_at';
 const CHAT_UNREAD_POLL_MS = 30 * 1000;
+const SUBSCRIPTION_WARNING_DAYS = 7;
+const DISMISSED_SUBSCRIPTION_NOTICE_KEY = 'healthone_dismissed_subscription_notice';
+
+function getHospitalExpiry(hospital: Hospital | null) {
+  if (!hospital) return null;
+  if (hospital.subscriptionStatus === 'trial') return hospital.trialEndsAt;
+  if (hospital.subscriptionStatus === 'active') return hospital.currentPeriodEndsAt;
+  return hospital.currentPeriodEndsAt || hospital.trialEndsAt;
+}
+
+function getDaysUntil(date?: Date | string | null) {
+  if (!date) return null;
+  const timestamp = new Date(date).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.ceil((timestamp - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+function getSubscriptionNotice(hospital: Hospital | null) {
+  const days = getDaysUntil(getHospitalExpiry(hospital));
+  if (!hospital || days === null) return null;
+
+  const label = hospital.subscriptionStatus === 'trial' ? 'trial' : 'subscription';
+
+  if (days < 0) {
+    return {
+      tone: 'danger',
+      message: `Your ${label} expired ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ago. Please contact Health One to renew access.`,
+    };
+  }
+
+  if (days <= SUBSCRIPTION_WARNING_DAYS) {
+    return {
+      tone: days <= 2 ? 'danger' : 'warning',
+      message:
+        days === 0
+          ? `Your ${label} expires today. Please contact Health One to renew access.`
+          : `Your ${label} expires in ${days} day${days === 1 ? '' : 's'}. Please contact Health One to renew before it expires.`,
+    };
+  }
+
+  return null;
+}
+
+function getSubscriptionNoticeKey(hospital: Hospital | null) {
+  if (!hospital) return '';
+  const expiry = getHospitalExpiry(hospital);
+  const expiryValue = expiry ? new Date(expiry).toISOString().slice(0, 10) : 'none';
+  return `${hospital.id || hospital.slug || 'demo'}:${hospital.subscriptionStatus}:${expiryValue}`;
+}
+
+function isSubscriptionNoticeDismissed(noticeKey: string) {
+  if (!noticeKey || typeof window === 'undefined') return false;
+  return window.localStorage.getItem(DISMISSED_SUBSCRIPTION_NOTICE_KEY) === noticeKey;
+}
 
 export default function DashboardLayout({
   children,
@@ -52,6 +131,10 @@ export default function DashboardLayout({
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [hospital, setHospital] = useState<Hospital | null>(null);
+  const [activeClinicType, setActiveClinicType] = useState<ClinicType>('dental');
+  const [dismissedSubscriptionNoticeKey, setDismissedSubscriptionNoticeKey] = useState('');
+  const [isSubscriptionNoticeModalOpen, setIsSubscriptionNoticeModalOpen] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioUnlockedRef = useRef(false);
   const hasSeenUnreadSnapshotRef = useRef(false);
@@ -97,13 +180,36 @@ export default function DashboardLayout({
     const bootstrapUser = async () => {
       const currentUser = getCurrentUser();
       if (currentUser) {
-        setUser(currentUser);
+        const refreshedUser = await refreshCurrentUser();
+        if (!refreshedUser) {
+          router.push('/login?reason=account-suspended');
+          setIsAuthLoading(false);
+          return;
+        }
+
+        if (!getAuthSessionId()) {
+          startAuthSession(refreshedUser);
+        } else if (!getTabAuthSessionId()) {
+          adoptCurrentAuthSession();
+        } else if (!isCurrentTabAuthSessionActive()) {
+          clearCurrentTabAuthSession();
+          router.push('/login?reason=account-changed');
+          setIsAuthLoading(false);
+          return;
+        }
+
+        setUser(refreshedUser);
         setIsAuthLoading(false);
         return;
       }
 
       const refreshedUser = await refreshCurrentUser();
       if (refreshedUser) {
+        if (!getAuthSessionId()) {
+          startAuthSession(refreshedUser);
+        } else if (!getTabAuthSessionId()) {
+          adoptCurrentAuthSession();
+        }
         setUser(refreshedUser);
       } else {
         router.push('/login');
@@ -113,6 +219,105 @@ export default function DashboardLayout({
 
     bootstrapUser();
   }, [router]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const sendTabToLogin = () => {
+      clearCurrentTabAuthSession();
+      setUser(null);
+      ApiClient.setActiveHospital(null);
+      router.push('/login?reason=account-changed');
+    };
+
+    const verifyTabSession = () => {
+      if (!getCurrentUser() || !getAuthSessionId()) {
+        clearCurrentTabAuthSession();
+        setUser(null);
+        ApiClient.setActiveHospital(null);
+        router.push('/login');
+        return;
+      }
+
+      if (!isCurrentTabAuthSessionActive()) {
+        sendTabToLogin();
+      }
+    };
+
+    const handleAuthStorage = (event: StorageEvent) => {
+      if (event.key === AUTH_SESSION_KEY && event.newValue !== getTabAuthSessionId()) {
+        sendTabToLogin();
+      }
+
+      if ((event.key === 'clinic_auth_user' || event.key === 'auth_token') && !event.newValue) {
+        clearCurrentTabAuthSession();
+        setUser(null);
+        ApiClient.setActiveHospital(null);
+        router.push('/login');
+      }
+    };
+
+    window.addEventListener('storage', handleAuthStorage);
+    window.addEventListener('focus', verifyTabSession);
+    document.addEventListener('visibilitychange', verifyTabSession);
+
+    return () => {
+      window.removeEventListener('storage', handleAuthStorage);
+      window.removeEventListener('focus', verifyTabSession);
+      document.removeEventListener('visibilitychange', verifyTabSession);
+    };
+  }, [router, user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadHospitalBranding = async () => {
+      const activeHospital = ApiClient.getActiveHospital();
+      if (user.isSuperAdmin && !user.hospitalId && !activeHospital) {
+        const demoHospital = ApiClient.getDemoHospitalSettings() as Hospital;
+        const noticeKey = getSubscriptionNoticeKey(demoHospital);
+        setHospital(demoHospital);
+        setActiveClinicType(getActiveClinicProfile(demoHospital.clinicTypes, demoHospital.id || demoHospital.slug));
+        setDismissedSubscriptionNoticeKey(
+          isSubscriptionNoticeDismissed(noticeKey) ? noticeKey : ''
+        );
+        setIsSubscriptionNoticeModalOpen(
+          Boolean(getSubscriptionNotice(demoHospital)) && !isSubscriptionNoticeDismissed(noticeKey)
+        );
+        return;
+      }
+
+      try {
+        const response = await ApiClient.getHospitalSettings();
+        const nextHospital = response?.hospital || response?.data || null;
+        const noticeKey = getSubscriptionNoticeKey(nextHospital);
+        setHospital(nextHospital);
+        setActiveClinicType(
+          getActiveClinicProfile(nextHospital?.clinicTypes, nextHospital?.id || nextHospital?.slug || 'demo')
+        );
+        setDismissedSubscriptionNoticeKey(
+          isSubscriptionNoticeDismissed(noticeKey) ? noticeKey : ''
+        );
+        setIsSubscriptionNoticeModalOpen(
+          Boolean(getSubscriptionNotice(nextHospital)) && !isSubscriptionNoticeDismissed(noticeKey)
+        );
+      } catch (loadError: any) {
+        if (String(loadError?.message || '').toLowerCase().includes('suspended')) {
+          logoutUser();
+          ApiClient.setActiveHospital(null);
+          router.push('/login?reason=account-suspended');
+          return;
+        }
+
+        setHospital(null);
+        setActiveClinicType('dental');
+        setDismissedSubscriptionNoticeKey('');
+        setIsSubscriptionNoticeModalOpen(false);
+      }
+    };
+
+    void loadHospitalBranding();
+  }, [router, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -261,6 +466,7 @@ export default function DashboardLayout({
   }, [playChatNotificationSound, user]);
 
   const handleLogout = () => {
+    ApiClient.setActiveHospital(null);
     logoutUser();
     router.push('/login');
   };
@@ -292,7 +498,6 @@ export default function DashboardLayout({
       label: 'Users',
       icon: <UserPlus className="w-5 h-5" />,
       roles: ['admin'],
-      superadminOnly: true,
     },
     {
       href: '/dashboard/appointments',
@@ -340,14 +545,77 @@ export default function DashboardLayout({
       (!link.roles || (user && link.roles.includes(user.role))) &&
       (!link.superadminOnly || Boolean(user?.isSuperAdmin))
   );
+  const activeHospital = ApiClient.getActiveHospital();
+  const routeUser = user
+    ? {
+        ...user,
+        hospitalSlug: hospital?.slug || activeHospital?.slug || user.hospitalSlug || null,
+      }
+    : user;
 
   const isActive = (href: string) => {
-    if (href === '/dashboard') return pathname === '/dashboard';
-    return pathname.startsWith(href);
+    const tenantHref = withHospitalDashboardPath(href, routeUser);
+    if (href === '/dashboard') return pathname === href || pathname === tenantHref;
+    return pathname.startsWith(href) || pathname.startsWith(tenantHref);
   };
 
   const sidebarExpanded = !isMobile || sidebarOpen;
   const sidebarWidthClass = sidebarExpanded ? 'md:pl-72' : 'md:pl-24';
+  const brandColor = hospital?.brandColor || '#275cc2';
+  const logoSize = Math.min(
+    Math.max(Number(hospital?.settings?.branding?.logoSize) || 48, 32),
+    96
+  );
+  const clinicTypes = normalizeClinicTypes(hospital?.clinicTypes);
+  const hasMultipleClinicProfiles = clinicTypes.length > 1;
+  const clinicProfileLabel = hasMultipleClinicProfiles
+    ? `${getClinicTypeLabel(activeClinicType)} active`
+    : getClinicTypeLabels(clinicTypes).join(' + ');
+  const subscriptionNotice = getSubscriptionNotice(hospital);
+  const subscriptionNoticeKey = getSubscriptionNoticeKey(hospital);
+  const shouldShowSubscriptionNotice =
+    Boolean(subscriptionNotice) && dismissedSubscriptionNoticeKey !== subscriptionNoticeKey;
+  const tenantThemeStyle = {
+    '--primary': brandColor,
+    '--ring': brandColor,
+    '--chart-1': brandColor,
+  } as CSSProperties;
+
+  const handleActiveClinicTypeChange = (clinicType: ClinicType) => {
+    const hospitalKey = hospital?.id || hospital?.slug || 'demo';
+    setActiveClinicType(setActiveClinicProfile(clinicType, clinicTypes, hospitalKey));
+  };
+
+  const dismissSubscriptionNotice = () => {
+    if (subscriptionNoticeKey && typeof window !== 'undefined') {
+      window.localStorage.setItem(DISMISSED_SUBSCRIPTION_NOTICE_KEY, subscriptionNoticeKey);
+    }
+    setDismissedSubscriptionNoticeKey(subscriptionNoticeKey);
+    setIsSubscriptionNoticeModalOpen(false);
+  };
+
+  const activeClinicSelector = hasMultipleClinicProfiles ? (
+    <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
+      <span className="hidden text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 sm:inline">
+        Profile
+      </span>
+      <Select
+        value={activeClinicType}
+        onValueChange={(value) => handleActiveClinicTypeChange(value as ClinicType)}
+      >
+        <SelectTrigger className="h-7 min-w-0 border-0 bg-transparent p-0 text-sm font-semibold text-slate-900 shadow-none focus-visible:ring-0">
+          <SelectValue placeholder="Profile" />
+        </SelectTrigger>
+        <SelectContent>
+        {CLINIC_TYPE_OPTIONS.filter((option) => clinicTypes.includes(option.id)).map((option) => (
+          <SelectItem key={option.id} value={option.id}>
+            {option.label}
+          </SelectItem>
+        ))}
+        </SelectContent>
+      </Select>
+    </div>
+  ) : null;
 
   if (isAuthLoading) {
     return null;
@@ -358,23 +626,35 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(124,199,184,0.12),transparent_25%),linear-gradient(180deg,rgba(248,252,251,1),rgba(240,247,246,1))] print:bg-white">
+    <div
+      className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(124,199,184,0.12),transparent_25%),linear-gradient(180deg,rgba(248,252,251,1),rgba(240,247,246,1))] print:bg-white"
+      style={tenantThemeStyle}
+    >
       {/* Sidebar */}
       <aside
         className={`${
           sidebarExpanded ? 'w-72' : 'w-24'
         } text-white transition-all duration-300 flex flex-col shadow-[0_24px_80px_-28px_rgba(8,47,73,0.8)] ${
           isMobile && !sidebarOpen ? 'hidden' : ''
-        } fixed left-0 top-0 z-50 h-screen bg-[#275cc2] print:hidden`}
+        } fixed left-0 top-0 z-50 h-screen print:hidden`}
+        style={{ backgroundColor: brandColor }}
       >
         {/* Logo */}
         <div className="border-b border-white/10 p-6">
           <div className={`flex items-center gap-3 ${!sidebarExpanded ? 'justify-center' : ''}`}>
-            <BrandMark className="h-12 w-12 bg-white shadow-black/10" priority />
+            <BrandMark
+              src={hospital?.logoUrl || '/icon.png'}
+              alt={hospital?.name || 'Health One'}
+              className="bg-white shadow-black/10"
+              priority
+              style={{ width: sidebarExpanded ? logoSize : 48, height: sidebarExpanded ? logoSize : 48 }}
+            />
             {sidebarExpanded && (
               <div>
-                <h1 className="text-lg font-semibold leading-none text-white">Health One</h1>
-                <p className="mt-1 text-xs text-cyan-50/80">Health Management System</p>
+                <h1 className="text-lg font-semibold leading-none text-white">
+                  {hospital?.name || 'Health One'}
+                </h1>
+                <p className="mt-1 text-xs text-cyan-50/80">{clinicProfileLabel}</p>
               </div>
             )}
           </div>
@@ -385,7 +665,7 @@ export default function DashboardLayout({
           {visibleLinks.map((link) => (
             <Link
               key={link.href}
-              href={link.href}
+              href={withHospitalDashboardPath(link.href, routeUser)}
               onClick={() => {
                 if (isMobile) {
                   setSidebarOpen(false);
@@ -464,8 +744,9 @@ export default function DashboardLayout({
             )}
           </button>
           <div className="flex items-center gap-2">
+            <div className="hidden md:block">{activeClinicSelector}</div>
             <Link
-              href="/dashboard/chat"
+              href={withHospitalDashboardPath('/dashboard/chat', routeUser)}
               className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"
             >
               <MessageCircle className="h-5 w-5" />
@@ -487,9 +768,70 @@ export default function DashboardLayout({
 
         {/* Page Content */}
         <main className="min-w-0 flex-1 overflow-auto p-4 pt-24 print:block print:overflow-visible print:p-0 md:p-6 md:pt-24">
+          {activeClinicSelector && <div className="mb-4 md:hidden">{activeClinicSelector}</div>}
+          {subscriptionNotice && shouldShowSubscriptionNotice && (
+            <div
+              className={`mb-4 flex items-start gap-3 rounded-2xl border p-4 pr-3 text-sm print:hidden ${
+                subscriptionNotice.tone === 'danger'
+                  ? 'border-red-200 bg-red-50 text-red-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'
+              }`}
+            >
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">Subscription notice</p>
+                <p className="mt-1">{subscriptionNotice.message}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Dismiss subscription notice"
+                onClick={dismissSubscriptionNotice}
+                className="rounded-full p-1 text-current opacity-70 transition hover:bg-white/60 hover:opacity-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
           {children}
         </main>
       </div>
+
+      {subscriptionNotice && (
+        <Dialog open={isSubscriptionNoticeModalOpen} onOpenChange={setIsSubscriptionNoticeModalOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <div
+                className={`mb-2 flex h-12 w-12 items-center justify-center rounded-2xl ${
+                  subscriptionNotice.tone === 'danger'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}
+              >
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <DialogTitle>Subscription notice</DialogTitle>
+              <DialogDescription className="text-base leading-6">
+                {subscriptionNotice.message}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              Please contact Health One to renew or update the hospital subscription before access is affected.
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsSubscriptionNoticeModalOpen(false)}
+              >
+                Close
+              </Button>
+              <Button type="button" onClick={dismissSubscriptionNotice}>
+                Don&apos;t show again
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

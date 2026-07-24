@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Billing from '@/lib/models/Billing';
-import { getPagination, getRequestUser } from '../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser } from '../_lib/request-auth';
 import { jsonError, jsonOk } from '../_lib/response';
 import { toAppBilling } from './_helpers';
 
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const { limit, skip } = getPagination(searchParams, 50, 200);
-    const query: any = {};
+    const query: any = buildHospitalQuery(user);
 
     const status = searchParams.get('status');
     const patientId = searchParams.get('patientId');
@@ -42,11 +42,11 @@ export async function GET(request: NextRequest) {
       Billing.countDocuments(query),
       Billing.aggregate([
         {
-          $match: {
+          $match: buildHospitalQuery(user, {
             hmoProvider: { $nin: ['', null] },
             hmoOutstandingAmount: { $gt: 0 },
             hmoClaimStatus: { $ne: 'Paid' },
-          },
+          }),
         },
         {
           $group: {

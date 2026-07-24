@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 import { PROCEDURE_TYPES, type ProcedureType } from '@/lib/procedure-types';
 
 export interface IAppointment extends Document {
+  hospitalId?: string | null;
   appointmentNumber?: string;
   patientId: string;
   doctorId: string;
@@ -18,6 +19,11 @@ export interface IAppointment extends Document {
 
 const appointmentSchema = new Schema<IAppointment>(
   {
+    hospitalId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     patientId: {
       type: String,
       required: [true, 'Patient ID is required'],
@@ -74,5 +80,7 @@ const appointmentSchema = new Schema<IAppointment>(
 appointmentSchema.index({ patientId: 1, status: 1 });
 appointmentSchema.index({ doctorId: 1, status: 1 });
 appointmentSchema.index({ dateTime: 1, status: 1 });
+appointmentSchema.index({ hospitalId: 1, dateTime: 1, status: 1 });
+appointmentSchema.index({ hospitalId: 1, doctorId: 1, status: 1 });
 
 export default mongoose.models.Appointment || mongoose.model<IAppointment>('Appointment', appointmentSchema);

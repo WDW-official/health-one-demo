@@ -7,6 +7,8 @@ export interface IUser extends Document {
   name: string;
   role: 'admin' | 'doctor';
   isSuperAdmin?: boolean;
+  hospitalId?: string | null;
+  hospitalSlug?: string | null;
   doctorId?: string; // Reference to Doctor collection if role is 'doctor'
   isActive?: boolean;
   mustChangePassword?: boolean;
@@ -44,6 +46,17 @@ const userSchema = new Schema<IUser>(
     isSuperAdmin: {
       type: Boolean,
       default: false,
+    },
+    hospitalId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    hospitalSlug: {
+      type: String,
+      default: null,
+      lowercase: true,
+      trim: true,
     },
     doctorId: {
       type: String,

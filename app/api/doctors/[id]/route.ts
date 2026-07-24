@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Doctor from '@/lib/models/Doctor';
 import { Types } from 'mongoose';
-import { hasSuperAdminAccess } from '../../_lib/request-auth';
+import { buildHospitalQuery, getRequestUser, hasSuperAdminAccess } from '../../_lib/request-auth';
 import { jsonError, jsonOk } from '../../_lib/response';
 
 export async function GET(
@@ -12,6 +12,7 @@ export async function GET(
   try {
     await connectDB();
 
+    const user = getRequestUser(request);
     const { id } = await params;
 
     if (!Types.ObjectId.isValid(id)) {
@@ -21,7 +22,7 @@ export async function GET(
       );
     }
 
-    const doctor = await Doctor.findById(id).lean();
+    const doctor = await Doctor.findOne(buildHospitalQuery(user, { _id: id })).lean();
 
     if (!doctor) {
       return NextResponse.json(
@@ -44,6 +45,11 @@ export async function PUT(
   try {
     await connectDB();
 
+    const user = getRequestUser(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Only admins can update doctors' }, { status: 403 });
+    }
+
     const { id } = await params;
 
     if (!Types.ObjectId.isValid(id)) {
@@ -55,8 +61,8 @@ export async function PUT(
 
     const body = await request.json();
 
-    const doctor = await Doctor.findByIdAndUpdate(
-      id,
+    const doctor = await Doctor.findOneAndUpdate(
+      buildHospitalQuery(user, { _id: id }),
       body,
       { new: true, runValidators: true }
     ).lean();
@@ -96,8 +102,8 @@ export async function DELETE(
     }
 
     // Soft delete
-    const doctor = await Doctor.findByIdAndUpdate(
-      id,
+    const doctor = await Doctor.findOneAndUpdate(
+      buildHospitalQuery(getRequestUser(request), { _id: id }),
       { isActive: false },
       { new: true }
     );

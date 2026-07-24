@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 
 import { connectDB } from '@/lib/mongodb';
 import User from '@/lib/models/User';
-import { getRequestUser } from '../../../_lib/request-auth';
+import { buildHospitalQuery, getRequestUser } from '../../../_lib/request-auth';
 
 function serializeUser(user: any) {
   return {
@@ -27,7 +27,7 @@ export async function PATCH(
   try {
     const requester = getRequestUser(request);
 
-    if (!requester || requester.role !== 'admin' || !requester.isSuperAdmin) {
+    if (!requester || requester.role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -52,8 +52,8 @@ export async function PATCH(
 
     await connectDB();
 
-    const user = await User.findByIdAndUpdate(
-      id,
+    const user = await User.findOneAndUpdate(
+      buildHospitalQuery(requester, { _id: id }),
       { isActive: body.isActive },
       { new: true, runValidators: true }
     ).lean();

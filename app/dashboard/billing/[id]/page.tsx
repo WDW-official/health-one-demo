@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
@@ -328,17 +329,21 @@ export default function BillingDetailPage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium">Payment Method</label>
-                  <select
+                  <Select
                     value={paymentForm.paymentMethod}
-                    onChange={(event) => setPaymentForm((prev) => ({ ...prev, paymentMethod: event.target.value as PaymentMethod }))}
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    onValueChange={(value) => setPaymentForm((prev) => ({ ...prev, paymentMethod: value as PaymentMethod }))}
                   >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select payment method" />
+                    </SelectTrigger>
+                    <SelectContent>
                     {paymentMethods.map((method) => (
-                      <option key={method} value={method}>
+                      <SelectItem key={method} value={method}>
                         {method}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div>
@@ -401,17 +406,21 @@ export default function BillingDetailPage() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium">Claim Status</label>
-                <select
+                <Select
                   value={hmoForm.hmoClaimStatus}
-                  onChange={(event) => setHmoForm((prev) => ({ ...prev, hmoClaimStatus: event.target.value as HmoClaimStatus }))}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  onValueChange={(value) => setHmoForm((prev) => ({ ...prev, hmoClaimStatus: value as HmoClaimStatus }))}
                 >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select claim status" />
+                  </SelectTrigger>
+                  <SelectContent>
                   {hmoStatuses.map((status) => (
-                    <option key={status} value={status}>
+                    <SelectItem key={status} value={status}>
                       {status}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium">Claim Submission Date</label>
@@ -423,17 +432,21 @@ export default function BillingDetailPage() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium">Payment Status</label>
-                <select
+                <Select
                   value={hmoForm.paymentStatus}
-                  onChange={(event) => setHmoForm((prev) => ({ ...prev, paymentStatus: event.target.value as PaymentStatus }))}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  onValueChange={(value) => setHmoForm((prev) => ({ ...prev, paymentStatus: value as PaymentStatus }))}
                 >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select payment status" />
+                  </SelectTrigger>
+                  <SelectContent>
                   {paymentStatuses.map((status) => (
-                    <option key={status} value={status}>
+                    <SelectItem key={status} value={status}>
                       {status}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div>

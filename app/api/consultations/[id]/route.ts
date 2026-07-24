@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Consultation from '@/lib/models/Consultation';
 import { Types } from 'mongoose';
-import { getRequestUser, hasSuperAdminAccess } from '../../_lib/request-auth';
+import { buildHospitalQuery, getRequestUser, hasSuperAdminAccess } from '../../_lib/request-auth';
 import { jsonError, jsonOk } from '../../_lib/response';
 import { getApiErrorMessage } from '../../_lib/error-message';
 import {
@@ -16,9 +16,15 @@ function toAppConsultation(doc: any) {
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
   return {
     ...plain,
+    clinicType: plain.clinicType ?? 'dental',
+    specialtyFields: plain.specialtyFields ?? {},
     presentingComplaints: plain.presentingComplaints ?? '',
     examination: plain.examination ?? '',
     treatmentPlan: plain.treatmentPlan ?? '',
+    clinicalNotes:
+      plain.clinicalNotes && plain.clinicalNotes.length > 0
+        ? plain.clinicalNotes
+        : buildLegacyClinicalNotes(plain),
     prescription: plain.prescription ?? plain.prescriptions ?? '',
     prescriptions: plain.prescriptions ?? plain.prescription ?? '',
     nextVisitDate: plain.nextVisitDate ?? plain.followUpDate ?? null,
@@ -32,6 +38,61 @@ function toAppConsultation(doc: any) {
     chartBlocks: plain.chartBlocks ?? [],
     attachments: plain.attachments ?? [],
   };
+}
+
+function buildClinicalNoteSnapshot(source: any, user: any) {
+  return {
+    enteredAt: new Date(),
+    enteredByUserId: user?.id || '',
+    enteredByName: user?.name || user?.email || '',
+    clinicType: source.clinicType ?? 'dental',
+    specialtyFields: source.specialtyFields ?? {},
+    presentingComplaints: source.presentingComplaints ?? '',
+    impressionDiagnosis: source.diagnosis ?? source.impressionDiagnosis ?? '',
+    treatmentPlan: source.treatmentPlan ?? '',
+    notes: source.notes ?? '',
+  };
+}
+
+function buildLegacyClinicalNotes(source: any) {
+  const hasClinicalContent = [
+    source.presentingComplaints,
+    source.diagnosis,
+    source.treatmentPlan,
+    source.notes,
+  ].some((value) => String(value || '').trim().length > 0);
+
+  if (!hasClinicalContent) return [];
+
+  return [
+    {
+      enteredAt: source.createdAt || source.updatedAt || new Date(),
+      enteredByUserId: '',
+      enteredByName: source.doctorName || '',
+      clinicType: source.clinicType ?? 'dental',
+      specialtyFields: source.specialtyFields ?? {},
+      presentingComplaints: source.presentingComplaints ?? '',
+      impressionDiagnosis: source.diagnosis ?? '',
+      treatmentPlan: source.treatmentPlan ?? '',
+      notes: source.notes ?? '',
+    },
+  ];
+}
+
+function clinicalNoteChanged(previous: any, next: any) {
+  const fields = [
+    ['presentingComplaints', 'presentingComplaints'],
+    ['diagnosis', 'diagnosis'],
+    ['treatmentPlan', 'treatmentPlan'],
+    ['notes', 'notes'],
+    ['clinicType', 'clinicType'],
+    ['specialtyFields', 'specialtyFields'],
+  ];
+
+    return fields.some(([previousKey, nextKey]) => {
+    if (!(nextKey in next)) return false;
+    return JSON.stringify(previous?.[previousKey] || '') !== JSON.stringify(next?.[nextKey] || '');
+  });
 }
 
 function normalizeProcedureStatuses(procedures: any[] = []) {
@@ -48,6 +109,7 @@ export async function GET(
   try {
     await connectDB();
 
+    const user = getRequestUser(request);
     const { id } = await params;
 
     if (!Types.ObjectId.isValid(id)) {
@@ -57,7 +119,7 @@ export async function GET(
       );
     }
 
-    const consultation = await Consultation.findById(id).lean();
+    const consultation = await Consultation.findOne(buildHospitalQuery(user, { _id: id })).lean();
 
     if (!consultation) {
       return NextResponse.json(
@@ -80,6 +142,11 @@ export async function PUT(
   try {
     await connectDB();
 
+    const user = getRequestUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
 
     if (!Types.ObjectId.isValid(id)) {
@@ -90,9 +157,20 @@ export async function PUT(
     }
 
     const body = await request.json();
+    const existingConsultation = await Consultation.findOne(buildHospitalQuery(user, { _id: id })).lean();
+
+    if (!existingConsultation) {
+      return NextResponse.json(
+        { error: 'Consultation not found' },
+        { status: 404 }
+      );
+    }
 
     const updateData: any = { ...body };
+    delete updateData.clinicalNotes;
     if ('appointmentId' in body) updateData.appointmentId = body.appointmentId || '';
+    if ('clinicType' in body) updateData.clinicType = body.clinicType || 'dental';
+    if ('specialtyFields' in body) updateData.specialtyFields = body.specialtyFields ?? {};
     if ('presentingComplaints' in body) updateData.presentingComplaints = body.presentingComplaints ?? '';
     if ('examination' in body) updateData.examination = body.examination ?? '';
     if ('treatmentPlan' in body) updateData.treatmentPlan = body.treatmentPlan ?? '';
@@ -108,10 +186,52 @@ export async function PUT(
     }
     if ('chartBlocks' in body) updateData.chartBlocks = body.chartBlocks ?? [];
     if ('attachments' in body) updateData.attachments = body.attachments ?? [];
+    if (clinicalNoteChanged(existingConsultation, body)) {
+      const nextClinicalNote = buildClinicalNoteSnapshot(
+        {
+          presentingComplaints:
+            'presentingComplaints' in body
+              ? body.presentingComplaints
+              : existingConsultation.presentingComplaints,
+          diagnosis: 'diagnosis' in body ? body.diagnosis : existingConsultation.diagnosis,
+          treatmentPlan:
+            'treatmentPlan' in body ? body.treatmentPlan : existingConsultation.treatmentPlan,
+          notes: 'notes' in body ? body.notes : existingConsultation.notes,
+          clinicType: 'clinicType' in body ? body.clinicType : existingConsultation.clinicType,
+          specialtyFields:
+            'specialtyFields' in body ? body.specialtyFields : existingConsultation.specialtyFields,
+        },
+        user
+      );
+      const existingClinicalNotes = Array.isArray(existingConsultation.clinicalNotes)
+        ? existingConsultation.clinicalNotes
+        : [];
 
-    let consultation = await Consultation.findByIdAndUpdate(
-      id,
-      updateData,
+      if (existingClinicalNotes.length === 0) {
+        updateData.clinicalNotes = [
+          ...buildLegacyClinicalNotes(existingConsultation),
+          nextClinicalNote,
+        ];
+      } else {
+        updateData.$push = {
+          ...(updateData.$push || {}),
+          clinicalNotes: nextClinicalNote,
+        };
+      }
+    }
+
+    const updateOperation = updateData.$push
+      ? {
+          $set: Object.fromEntries(
+            Object.entries(updateData).filter(([key]) => key !== '$push')
+          ),
+          $push: updateData.$push,
+        }
+      : updateData;
+
+    let consultation = await Consultation.findOneAndUpdate(
+      buildHospitalQuery(user, { _id: id }),
+      updateOperation,
       { new: true, runValidators: true }
     ).lean();
 
@@ -122,9 +242,12 @@ export async function PUT(
       );
     }
 
-    const estimatedConsumables = await estimateConsultationConsumables(consultation.procedures || []);
-    consultation = await Consultation.findByIdAndUpdate(
-      id,
+    const estimatedConsumables = await estimateConsultationConsumables(
+      consultation.procedures || [],
+      user.hospitalId || null
+    );
+    consultation = await Consultation.findOneAndUpdate(
+      buildHospitalQuery(user, { _id: id }),
       { estimatedConsumables },
       { new: true, runValidators: true }
     ).lean();
@@ -133,10 +256,10 @@ export async function PUT(
       consultation,
       buildBillingItemsFromProcedures(consultation.procedures || [])
     );
-    const deduction = await deductConsultationConsumables(consultation, getRequestUser(request));
+    const deduction = await deductConsultationConsumables(consultation, user);
     if (deduction.deducted) {
-      consultation = await Consultation.findByIdAndUpdate(
-        id,
+      consultation = await Consultation.findOneAndUpdate(
+        buildHospitalQuery(user, { _id: id }),
         { consumablesDeductedAt: new Date() },
         { new: true, runValidators: true }
       ).lean();
@@ -174,7 +297,7 @@ export async function DELETE(
       );
     }
 
-    await Consultation.findByIdAndDelete(id);
+    await Consultation.findOneAndDelete(buildHospitalQuery(getRequestUser(request), { _id: id }));
 
     return jsonOk(null, { message: 'Consultation deleted successfully' });
   } catch (error) {

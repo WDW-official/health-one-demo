@@ -2,12 +2,36 @@ import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import User from '@/lib/models/User';
+import Hospital from '@/lib/models/Hospital';
 import { generateToken } from '@/lib/jwt';
 
 const RESET_TOKEN_EXPIRES_MS = 60 * 60 * 1000;
 
 function hashToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function serializeAuthUser(user: any) {
+  return {
+    id: user._id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    doctorId: user.doctorId,
+    hospitalId: user.hospitalId,
+    hospitalSlug: user.hospitalSlug,
+    isSuperAdmin: user.isSuperAdmin,
+    isActive: user.isActive,
+    mustChangePassword: user.mustChangePassword,
+  };
+}
+
+function isHospitalAccessBlocked(hospital: any) {
+  return (
+    !hospital ||
+    hospital.isActive === false ||
+    ['suspended', 'cancelled'].includes(String(hospital.subscriptionStatus))
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -39,6 +63,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!user.isSuperAdmin && user.hospitalId) {
+      const hospital = await Hospital.findById(user.hospitalId).lean();
+      if (isHospitalAccessBlocked(hospital)) {
+        return NextResponse.json(
+          { error: 'This hospital account is suspended. Contact Health One to restore access.' },
+          { status: 403 }
+        );
+      }
+    }
+
     // Compare password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
@@ -59,16 +93,7 @@ export async function POST(request: NextRequest) {
           message: 'Password reset required',
           passwordResetRequired: true,
           resetToken,
-          user: {
-            id: user._id,
-            email: user.email,
-            name: user.name,
-            role: user.role,
-            doctorId: user.doctorId,
-            isSuperAdmin: user.isSuperAdmin,
-            isActive: user.isActive,
-            mustChangePassword: user.mustChangePassword,
-          },
+          user: serializeAuthUser(user),
         },
         { status: 200 }
       );
@@ -81,21 +106,15 @@ export async function POST(request: NextRequest) {
       role: user.role,
       name: user.name,
       doctorId: user.doctorId,
+      hospitalId: user.hospitalId,
+      hospitalSlug: user.hospitalSlug,
       isSuperAdmin: user.isSuperAdmin,
     });
 
     return NextResponse.json(
       {
         message: 'Login successful',
-        user: {
-          id: user._id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          doctorId: user.doctorId,
-          isSuperAdmin: user.isSuperAdmin,
-          isActive: user.isActive,
-        },
+        user: serializeAuthUser(user),
         token,
       },
       { status: 200 }

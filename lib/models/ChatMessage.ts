@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IChatMessage extends Document {
+  hospitalId?: string | null;
   senderId: string;
   senderName: string;
   senderRole: 'admin' | 'doctor';
@@ -14,6 +15,11 @@ export interface IChatMessage extends Document {
 
 const chatMessageSchema = new Schema<IChatMessage>(
   {
+    hospitalId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     senderId: {
       type: String,
       required: true,
@@ -54,5 +60,7 @@ const chatMessageSchema = new Schema<IChatMessage>(
 
 chatMessageSchema.index({ createdAt: -1 });
 chatMessageSchema.index({ senderId: 1, recipientId: 1, createdAt: -1 });
+chatMessageSchema.index({ hospitalId: 1, createdAt: -1 });
+chatMessageSchema.index({ hospitalId: 1, senderId: 1, recipientId: 1, createdAt: -1 });
 
 export default mongoose.models.ChatMessage || mongoose.model<IChatMessage>('ChatMessage', chatMessageSchema);

@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Patient from '@/lib/models/Patient';
 import { jsonCreated, jsonError, jsonOk } from '../_lib/response';
-import { getPagination, getRequestUser } from '../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser, getUserHospitalId, withHospitalId } from '../_lib/request-auth';
 import { getApiErrorMessage } from '../_lib/error-message';
+import {
+  formatPatientMrn,
+  getHospitalMrnPrefix,
+  getNextPatientMrnForHospital,
+  normalizePatientMrn,
+} from '@/lib/patient-mrn';
 
 function normalizePatient(doc: any) {
   if (!doc) return doc;
@@ -13,24 +19,6 @@ function normalizePatient(doc: any) {
     id: plain.id || String(plain._id),
     mrn: plain.mrn || `ARC${String(String(plain._id).slice(-6)).toUpperCase()}`,
   };
-}
-
-function getMrnNumber(mrn: string | undefined) {
-  const match = String(mrn || '').match(/^ARC(\d+)$/i);
-  return match ? Number(match[1]) : 0;
-}
-
-async function getNextMrnFromHighestExisting() {
-  const patients = await Patient.find({ mrn: /^ARC\d+$/i })
-    .select('mrn')
-    .lean();
-
-  const highestMrnNumber = patients.reduce((highest: number, patient: any) => {
-    const mrnNumber = getMrnNumber(patient.mrn);
-    return mrnNumber > highest ? mrnNumber : highest;
-  }, 0);
-
-  return `ARC${highestMrnNumber + 1}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -43,7 +31,7 @@ export async function GET(request: NextRequest) {
     const doctorId = searchParams.get('doctorId'); // Filter by assigned doctor for admin views only
     const user = getRequestUser(request);
 
-    let query: any = { isActive: true };
+    let query: any = buildHospitalQuery(user, { isActive: true });
 
     if (user?.role !== 'doctor' && doctorId) {
       query.assignedDoctorId = doctorId;
@@ -84,7 +72,11 @@ export async function GET(request: NextRequest) {
 
     const total = await Patient.countDocuments(query);
 
-    const normalized = patients.map(normalizePatient);
+    const prefix = await getHospitalMrnPrefix(getUserHospitalId(user));
+    const normalized = patients.map((patient) => ({
+      ...normalizePatient(patient),
+      mrn: patient.mrn || formatPatientMrn(prefix, 0),
+    }));
     return jsonOk(normalized, { patients: normalized, total, limit, skip });
   } catch (error) {
     console.error('Get patients error:', error);
@@ -102,6 +94,8 @@ export async function POST(request: NextRequest) {
     await connectDB();
 
     const body = await request.json();
+    const hospitalId = getUserHospitalId(user);
+    const mrnPrefix = await getHospitalMrnPrefix(hospitalId);
 
     // Validate required fields
     const required = ['firstName', 'lastName', 'dateOfBirth', 'email', 'phone', 'emergencyContactName', 'emergencyContactPhone'];
@@ -115,9 +109,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if patient with email/phone already exists
-    const existing = await Patient.findOne({
+    const existing = await Patient.findOne(buildHospitalQuery(user, {
       $or: [{ email: body.email }, { phone: body.phone }],
-    });
+    }));
 
     if (existing) {
       return NextResponse.json(
@@ -128,8 +122,8 @@ export async function POST(request: NextRequest) {
 
     // Create new patient. MRN must follow the highest existing MRN, not patient count.
     const patient = new Patient({
-      ...body,
-      mrn: body.mrn || (await getNextMrnFromHighestExisting()),
+      ...withHospitalId(user, body),
+      mrn: normalizePatientMrn(body.mrn, mrnPrefix) || (await getNextPatientMrnForHospital(Patient, hospitalId)),
     });
     await patient.save();
 

@@ -8,6 +8,7 @@ export type InventoryMovementType =
   | 'correction';
 
 export interface IInventoryMovement extends Document {
+  hospitalId?: string | null;
   inventoryItemId: string;
   itemName: string;
   category?: string;
@@ -28,6 +29,7 @@ export interface IInventoryMovement extends Document {
 
 const inventoryMovementSchema = new Schema<IInventoryMovement>(
   {
+    hospitalId: { type: String, default: null, index: true },
     inventoryItemId: { type: String, required: true, index: true },
     itemName: { type: String, required: true, trim: true, index: true },
     category: { type: String, default: '', trim: true, index: true },
@@ -50,6 +52,9 @@ const inventoryMovementSchema = new Schema<IInventoryMovement>(
   },
   { timestamps: true }
 );
+
+inventoryMovementSchema.index({ hospitalId: 1, createdAt: -1 });
+inventoryMovementSchema.index({ hospitalId: 1, inventoryItemId: 1, createdAt: -1 });
 
 export default mongoose.models.InventoryMovement ||
   mongoose.model<IInventoryMovement>('InventoryMovement', inventoryMovementSchema);

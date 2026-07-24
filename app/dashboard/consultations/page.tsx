@@ -40,6 +40,9 @@ export default function ConsultationsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [patientFilter, setPatientFilter] = useState('');
+  const [diagnosisFilter, setDiagnosisFilter] = useState('');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -52,6 +55,9 @@ export default function ConsultationsPage() {
           ApiClient.getAllConsultations({
             ...doctorParams,
             patientId: patientFilter || undefined,
+            diagnosis: diagnosisFilter.trim() || undefined,
+            startDate: startDateFilter || undefined,
+            endDate: endDateFilter || undefined,
             limit: 200,
             skip: 0,
           }),
@@ -72,7 +78,7 @@ export default function ConsultationsPage() {
     };
 
     loadData();
-  }, [patientFilter]);
+  }, [diagnosisFilter, endDateFilter, patientFilter, startDateFilter]);
 
   const patientMap = useMemo(() => {
     return new Map(patients.map((patient) => [patient.id, patient]));
@@ -88,6 +94,14 @@ export default function ConsultationsPage() {
   const sortedConsultations = [...filteredConsultations].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
+  const hasAdvancedFilters = Boolean(patientFilter || diagnosisFilter || startDateFilter || endDateFilter);
+
+  const clearAdvancedFilters = () => {
+    setPatientFilter('');
+    setDiagnosisFilter('');
+    setStartDateFilter('');
+    setEndDateFilter('');
+  };
 
   return (
     <div className="space-y-6">
@@ -121,26 +135,66 @@ export default function ConsultationsPage() {
       </Card>
 
       <Card>
-        <CardContent className="pt-6">
-          <SearchableSelect
-            value={patientFilter}
-            onValueChange={(value) => setPatientFilter(value)}
-            options={patients.map((patient) => ({
-              value: patient.id,
-              label: `${patient.mrn || patient.id} • ${patient.firstName} ${patient.lastName}`,
-              description: patient.assignedDoctorName ? `Dr. ${patient.assignedDoctorName}` : patient.email,
-            }))}
-            placeholder="Filter consultations by patient"
-            searchPlaceholder="Search patient MRN or name..."
-            emptyText="No patients found."
-          />
-          {patientFilter && (
-            <div className="mt-3">
-              <Button type="button" variant="outline" size="sm" onClick={() => setPatientFilter('')}>
-                Clear patient filter
-              </Button>
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+          <CardDescription>Filter records by date range, patient, or diagnosis.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Patient</label>
+              <SearchableSelect
+                value={patientFilter}
+                onValueChange={(value) => setPatientFilter(value)}
+                options={patients.map((patient) => ({
+                  value: patient.id,
+                  label: `${patient.mrn || patient.id} • ${patient.firstName} ${patient.lastName}`,
+                  description: patient.assignedDoctorName ? `Dr. ${patient.assignedDoctorName}` : patient.email,
+                }))}
+                placeholder="Filter consultations by patient"
+                searchPlaceholder="Search patient MRN or name..."
+                emptyText="No patients found."
+              />
             </div>
-          )}
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Diagnosis</label>
+              <Input
+                value={diagnosisFilter}
+                onChange={(event) => setDiagnosisFilter(event.target.value)}
+                placeholder="e.g. Pulpitis, Gingivitis..."
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Start Date</label>
+              <Input
+                type="date"
+                value={startDateFilter}
+                onChange={(event) => setStartDateFilter(event.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">End Date</label>
+              <Input
+                type="date"
+                value={endDateFilter}
+                onChange={(event) => setEndDateFilter(event.target.value)}
+              />
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!hasAdvancedFilters}
+              onClick={clearAdvancedFilters}
+            >
+              Clear Filters
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

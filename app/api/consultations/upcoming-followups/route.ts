@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Consultation from '@/lib/models/Consultation';
 import { jsonError, jsonOk } from '../../_lib/response';
+import { buildHospitalQuery, getRequestUser } from '../../_lib/request-auth';
 
 function toAppConsultation(doc: any) {
   if (!doc) return doc;
@@ -20,9 +21,10 @@ export async function GET(request: NextRequest) {
     await connectDB();
 
     const now = new Date();
-    const consultations = await Consultation.find({
+    const user = getRequestUser(request);
+    const consultations = await Consultation.find(buildHospitalQuery(user, {
       followUpDate: { $gte: now.toISOString() },
-    })
+    }))
       .lean()
       .sort({ followUpDate: 1 });
 

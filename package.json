@@ -8,7 +8,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
-    "seed:superadmin": "node --env-file=.env scripts/seed-superadmin.js"
+    "seed:superadmin": "node --env-file=.env scripts/seed-superadmin.js",
+    "tenant:backfill-default": "node --env-file=.env scripts/backfill-default-hospital.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

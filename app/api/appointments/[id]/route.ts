@@ -5,13 +5,14 @@ import Patient from '@/lib/models/Patient';
 import Reminder from '@/lib/models/Reminder';
 import { ensureAppointmentNumber } from '@/lib/appointment-number';
 import { Types } from 'mongoose';
-import { hasSuperAdminAccess } from '../../_lib/request-auth';
+import { buildHospitalQuery, getRequestUser, hasSuperAdminAccess } from '../../_lib/request-auth';
 import { jsonError, jsonOk } from '../../_lib/response';
 import { getApiErrorMessage } from '../../_lib/error-message';
 
 function buildAppointmentReminder(appointment: any, patient: any) {
   const dateTime = new Date(appointment.dateTime);
   return {
+    hospitalId: appointment.hospitalId || null,
     patientId: appointment.patientId,
     appointmentId: appointment.id || String(appointment._id),
     doctorId: appointment.doctorId,
@@ -46,6 +47,7 @@ export async function GET(
   try {
     await connectDB();
 
+    const user = getRequestUser(request);
     const { id } = await params;
 
     if (!Types.ObjectId.isValid(id)) {
@@ -55,7 +57,7 @@ export async function GET(
       );
     }
 
-    const appointment = await Appointment.findById(id).lean();
+    const appointment = await Appointment.findOne(buildHospitalQuery(user, { _id: id })).lean();
 
     if (!appointment) {
       return NextResponse.json(
@@ -79,6 +81,11 @@ export async function PUT(
   try {
     await connectDB();
 
+    const user = getRequestUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
 
     if (!Types.ObjectId.isValid(id)) {
@@ -97,8 +104,8 @@ export async function PUT(
       );
     }
 
-    const appointment = await Appointment.findByIdAndUpdate(
-      id,
+    const appointment = await Appointment.findOneAndUpdate(
+      buildHospitalQuery(user, { _id: id }),
       body,
       { new: true, runValidators: true }
     ).lean();
@@ -110,10 +117,12 @@ export async function PUT(
       );
     }
 
-    const existingReminder = await Reminder.findOne({ appointmentId: appointment.id || String(appointment._id) });
+    const existingReminder = await Reminder.findOne(
+      buildHospitalQuery(user, { appointmentId: appointment.id || String(appointment._id) })
+    );
 
     if (appointment.status === 'scheduled') {
-      const patient = await Patient.findById(appointment.patientId);
+      const patient = await Patient.findOne(buildHospitalQuery(user, { _id: appointment.patientId }));
       const reminderPayload = buildAppointmentReminder(appointment, patient);
 
       if (existingReminder) {
@@ -154,7 +163,7 @@ export async function DELETE(
       );
     }
 
-    await Appointment.findByIdAndDelete(id);
+    await Appointment.findOneAndDelete(buildHospitalQuery(getRequestUser(request), { _id: id }));
 
     return jsonOk(null, { message: 'Appointment deleted successfully' });
   } catch (error) {

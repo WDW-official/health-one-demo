@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { connectDB } from '@/lib/mongodb';
 import Inventory from '@/lib/models/Inventory';
 import InventoryMovement from '@/lib/models/InventoryMovement';
-import { getRequestUser } from '@/app/api/_lib/request-auth';
+import { buildHospitalQuery, getRequestUser } from '@/app/api/_lib/request-auth';
 import { jsonOk, jsonError } from '@/app/api/_lib/response';
 import { getApiErrorMessage } from '@/app/api/_lib/error-message';
 
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!isValidId(id)) return jsonError('Invalid inventory item ID.', 400);
 
     await connectDB();
-    const item = await Inventory.findById(id);
+    const item = await Inventory.findOne(buildHospitalQuery(user, { _id: id }));
     if (!item) return jsonError('Inventory item not found.', 404);
 
     return jsonOk(item.toJSON());
@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!isValidId(id)) return jsonError('Invalid inventory item ID.', 400);
 
     await connectDB();
-    const item = await Inventory.findById(id);
+    const item = await Inventory.findOne(buildHospitalQuery(user, { _id: id }));
     if (!item) return jsonError('Inventory item not found.', 404);
 
     const body = await request.json();
@@ -75,6 +75,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const quantityAfter = Number(item.quantity || 0);
     if (quantityAfter !== quantityBefore) {
       await InventoryMovement.create({
+        hospitalId: user.hospitalId || null,
         inventoryItemId: String(item._id),
         itemName: item.name,
         category: item.category || previousCategory,
@@ -107,7 +108,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     if (!isValidId(id)) return jsonError('Invalid inventory item ID.', 400);
 
     await connectDB();
-    const item = await Inventory.findByIdAndDelete(id);
+    const item = await Inventory.findOneAndDelete(buildHospitalQuery(user, { _id: id }));
     if (!item) return jsonError('Inventory item not found.', 404);
 
     return jsonOk({ id }, { message: 'Stock item deleted successfully.' });

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Patient from '@/lib/models/Patient';
 import { jsonError, jsonOk } from '../../../_lib/response';
-import { getPagination, getRequestUser } from '../../../_lib/request-auth';
+import { buildHospitalQuery, getPagination, getRequestUser } from '../../../_lib/request-auth';
 
 export async function GET(
   request: NextRequest,
@@ -19,19 +19,18 @@ export async function GET(
       return jsonError('Forbidden', 403);
     }
 
-    const patients = await Patient.find({
+    const query = buildHospitalQuery(user, {
       assignedDoctorId: doctorId,
       isActive: true,
-    })
+    });
+
+    const patients = await Patient.find(query)
       .lean()
       .limit(limit)
       .skip(skip)
       .sort({ createdAt: -1 });
 
-    const total = await Patient.countDocuments({
-      assignedDoctorId: doctorId,
-      isActive: true,
-    });
+    const total = await Patient.countDocuments(query);
 
     return jsonOk(patients, { patients, total, limit, skip });
   } catch (error) {

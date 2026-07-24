@@ -3,6 +3,7 @@ import { connectDB } from '@/lib/mongodb';
 import Appointment from '@/lib/models/Appointment';
 import { ensureAppointmentNumbers } from '@/lib/appointment-number';
 import { jsonError, jsonOk } from '../../../_lib/response';
+import { buildHospitalQuery, getRequestUser } from '../../../_lib/request-auth';
 
 export async function GET(
   request: NextRequest,
@@ -12,8 +13,9 @@ export async function GET(
     await connectDB();
 
     const { patientId } = await params;
+    const user = getRequestUser(request);
 
-    const appointments = (await Appointment.find({ patientId })
+    const appointments = (await Appointment.find(buildHospitalQuery(user, { patientId }))
       .lean()
       .sort({ dateTime: -1 })) as any[];
 
