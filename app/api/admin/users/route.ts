@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import Hospital from '@/lib/models/Hospital';
 import User from '@/lib/models/User';
 import { buildHospitalQuery, getRequestUser, getUserHospitalId } from '@/app/api/_lib/request-auth';
+import { getHospitalMaxUsers } from '@/lib/plan-access';
 
 function serializeUser(user: any) {
   return {
@@ -22,6 +24,25 @@ function serializeUser(user: any) {
 
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function assertUserLimitAvailable(hospitalId?: string | null) {
+  if (!hospitalId) return null;
+
+  const hospital = await Hospital.findById(hospitalId).lean();
+  if (!hospital) return 'Hospital not found';
+
+  const maxUsers = getHospitalMaxUsers(hospital);
+  const activeUsers = await User.countDocuments({
+    hospitalId,
+    isActive: { $ne: false },
+  });
+
+  if (activeUsers >= maxUsers) {
+    return `This hospital has reached the ${maxUsers}-user limit for the ${hospital.subscriptionPlan || 'current'} plan. Upgrade the plan before creating another active user.`;
+  }
+
+  return null;
 }
 
 export async function GET(request: NextRequest) {
@@ -138,6 +159,11 @@ export async function POST(request: NextRequest) {
     const existingUser = await User.findOne({ email: String(email).toLowerCase() });
     if (existingUser) {
       return NextResponse.json({ error: 'User already exists' }, { status: 409 });
+    }
+
+    const userLimitError = await assertUserLimitAvailable(nextHospitalId);
+    if (userLimitError) {
+      return NextResponse.json({ error: userLimitError }, { status: 403 });
     }
 
     const user = new User({

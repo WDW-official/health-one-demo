@@ -1,6 +1,9 @@
 import { NextRequest } from 'next/server';
-import { getRequestUser } from '@/app/api/_lib/request-auth';
+import { getRequestUser, getUserHospitalId } from '@/app/api/_lib/request-auth';
 import { jsonError, jsonOk } from '@/app/api/_lib/response';
+import { connectDB } from '@/lib/mongodb';
+import Hospital from '@/lib/models/Hospital';
+import { FEATURE_KEYS, hasHospitalFeature } from '@/lib/plan-access';
 
 type DiagnosisSuggestion = {
   diagnosis: string;
@@ -40,6 +43,18 @@ export async function POST(request: NextRequest) {
   try {
     const user = getRequestUser(request);
     if (!user) return jsonError('Unauthorized', 401);
+
+    const hospitalId = getUserHospitalId(user);
+    if (!hospitalId) return jsonError('Hospital context is required.', 400);
+
+    await connectDB();
+
+    const hospital = await Hospital.findById(hospitalId).lean();
+    if (!hospital) return jsonError('Hospital not found.', 404);
+
+    if (!hasHospitalFeature(hospital, FEATURE_KEYS.aiAssistant)) {
+      return jsonError("AI Doctor's assistant is available on the Professional plan.", 403);
+    }
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {

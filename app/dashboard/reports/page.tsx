@@ -45,6 +45,7 @@ import {
   Billing,
   Consultation,
   Doctor,
+  Hospital,
   Patient,
 } from '@/lib/types';
 
@@ -162,6 +163,7 @@ export default function ReportsPage() {
   const [billingRecords, setBillingRecords] = useState<Billing[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [hospital, setHospital] = useState<Hospital | null>(null);
 
   const [range, setRange] = useState<RangeFilter>('30d');
   const [doctorFilter, setDoctorFilter] = useState('all');
@@ -179,6 +181,7 @@ export default function ReportsPage() {
           billingRes,
           patientRes,
           doctorRes,
+          settingsRes,
         ] = await Promise.all([
           ApiClient.getAllAppointments({
             limit: 200,
@@ -200,6 +203,7 @@ export default function ReportsPage() {
             limit: 200,
             skip: 0,
           }),
+          ApiClient.getHospitalSettings(),
         ]);
 
         setAppointments(appointmentRes?.data || []);
@@ -207,6 +211,7 @@ export default function ReportsPage() {
         setBillingRecords(billingRes?.data || []);
         setPatients(patientRes?.data || []);
         setDoctors(doctorRes?.data || []);
+        setHospital(settingsRes?.hospital || settingsRes?.data || null);
       } catch (error) {
         console.error('Failed to load reports:', error);
       } finally {
@@ -476,6 +481,8 @@ export default function ReportsPage() {
   ]);
 
   const exportCsv = () => {
+    if (!canExportReports) return;
+
     const rows: Array<Array<string | number>> = [
       ['Metric', 'Value'],
       [
@@ -588,6 +595,8 @@ export default function ReportsPage() {
       : paymentLabels[
           paymentFilter as PaymentStatus
         ];
+  const enabledFeatures = hospital?.settings?.enabledFeatures || [];
+  const canExportReports = enabledFeatures.includes('exportable_reports');
 
   return (
     <div className="space-y-6">
@@ -612,12 +621,28 @@ export default function ReportsPage() {
             </Button>
           </Link>
           
-          <Button onClick={exportCsv}>
+          <Button
+            onClick={exportCsv}
+            disabled={!canExportReports}
+            title={
+              canExportReports
+                ? 'Export CSV'
+                : 'Exportable reports are available on the Professional plan.'
+            }
+          >
             <Download className="mr-2 h-4 w-4" />
             Export CSV
           </Button>
 
-          <Button variant="outline">
+          <Button
+            variant="outline"
+            disabled={!canExportReports}
+            title={
+              canExportReports
+                ? 'Export PDF'
+                : 'Exportable reports are available on the Professional plan.'
+            }
+          >
             <FileText className="mr-2 h-4 w-4" />
             Export PDF
           </Button>

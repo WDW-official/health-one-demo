@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle, Palette, Save, Upload } from 'lucide-react';
+import Link from 'next/link';
+import { AlertCircle, CheckCircle, CreditCard, Palette, Save, Upload } from 'lucide-react';
 
 import { BrandMark } from '@/components/brand-mark';
 import { LoadingState } from '@/components/loading-state';
@@ -9,7 +10,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ApiClient } from '@/lib/api-client';
+import { getCurrentUser } from '@/lib/auth';
 import { CLINIC_TYPE_OPTIONS, normalizeClinicTypes } from '@/lib/clinic-config';
+import { getSubscriptionLifecycle } from '@/lib/subscription-lifecycle';
+import { getSubscriptionPlan } from '@/lib/subscription-plans';
+import { withHospitalDashboardPath } from '@/lib/tenant-routing';
 import type { ClinicType, Hospital } from '@/lib/types';
 
 const DEFAULT_BRAND_COLOR = '#275cc2';
@@ -55,6 +60,14 @@ function toForm(hospital?: Hospital | null): SettingsForm {
   };
 }
 
+function formatNaira(amount: number) {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(amount || 0);
+}
+
 export default function SettingsPage() {
   const [hospital, setHospital] = useState<Hospital | null>(null);
   const [form, setForm] = useState<SettingsForm>(() => toForm(null));
@@ -65,6 +78,7 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const isDemoSettings = hospital?.id === 'demo';
+  const currentUser = getCurrentUser();
 
   useEffect(() => {
     let mounted = true;
@@ -97,6 +111,13 @@ export default function SettingsPage() {
   }, []);
 
   const logoPreviewSrc = useMemo(() => form.logoUrl.trim() || '/icon.png', [form.logoUrl]);
+  const subscriptionLifecycle = hospital ? getSubscriptionLifecycle(hospital) : null;
+  const subscriptionExpiry =
+    subscriptionLifecycle?.expiry instanceof Date && Number.isFinite(subscriptionLifecycle.expiry.getTime())
+      ? subscriptionLifecycle.expiry
+      : null;
+  const currentPlan = getSubscriptionPlan(String(hospital?.subscriptionPlan || '')) || getSubscriptionPlan('clinic');
+  const currentMaxUsers = Number(hospital?.settings?.planLimits?.maxUsers || currentPlan?.maxUsers || 0);
 
   const updateForm = (key: keyof SettingsForm, value: string | number) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -417,6 +438,55 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </form>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CreditCard className="h-5 w-5" />
+            Subscription Payment
+          </CardTitle>
+          <CardDescription>Renew this hospital workspace through Paystack.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blue-700">Current Plan</p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-xl font-bold text-slate-950">{currentPlan?.name || 'Clinic'}</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {currentPlan ? `${formatNaira(currentPlan.amount)} per month` : 'Plan pricing unavailable'}
+                  </p>
+                </div>
+                {currentMaxUsers > 0 && (
+                  <span className="rounded-full border border-blue-200 bg-white px-3 py-1 text-sm font-semibold text-blue-700">
+                    Up to {currentMaxUsers} users
+                  </span>
+                )}
+              </div>
+            </div>
+            <p className="text-sm font-semibold capitalize text-slate-900">
+              Status: {hospital?.subscriptionStatus?.replace('_', ' ') || 'Unknown'}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {subscriptionExpiry
+                ? `Current access ends ${subscriptionExpiry.toLocaleDateString()}`
+                : 'No subscription expiry date is currently set.'}
+            </p>
+            {subscriptionLifecycle?.status === 'past_due' && subscriptionLifecycle.graceDaysRemaining !== null && (
+              <p className="mt-1 text-sm font-medium text-amber-700">
+                Suspends in {subscriptionLifecycle.graceDaysRemaining} day{subscriptionLifecycle.graceDaysRemaining === 1 ? '' : 's'}.
+              </p>
+            )}
+          </div>
+          <Link href={withHospitalDashboardPath('/dashboard/settings/billing', currentUser)}>
+            <Button type="button" className="w-full md:w-auto">
+              <CreditCard className="mr-2 h-4 w-4" />
+              Renew Subscription
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -52,6 +52,10 @@ type HospitalSettingsData = {
   settings?: Record<string, unknown>;
 };
 
+type InitializeSubscriptionPaymentData = {
+  planId: string;
+};
+
 function getDefaultDemoHospitalSettings() {
   const now = new Date();
 
@@ -443,6 +447,25 @@ export class ApiClient {
     }
 
     return response.json();
+  }
+
+  static async getSubscriptionPlans() {
+    return this.request('/subscription-payments/plans');
+  }
+
+  static async initializeSubscriptionPayment(paymentData: InitializeSubscriptionPaymentData) {
+    return this.request('/subscription-payments/initialize', {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    });
+  }
+
+  static async verifySubscriptionPayment(reference: string) {
+    return this.request(`/subscription-payments/verify?reference=${encodeURIComponent(reference)}`);
+  }
+
+  static async getPlatformSubscriptionPayments(params: ListParams = {}) {
+    return this.request(`/platform/subscription-payments${buildQuery(params)}`);
   }
 
   // Patient endpoints

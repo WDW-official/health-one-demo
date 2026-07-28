@@ -5,6 +5,10 @@ import { getRequestUser } from '@/app/api/_lib/request-auth';
 import { normalizeClinicTypes } from '@/lib/clinic-config';
 import { connectDB } from '@/lib/mongodb';
 import Hospital from '@/lib/models/Hospital';
+import SubscriptionPayment from '@/lib/models/SubscriptionPayment';
+import { getPlanSettings } from '@/lib/plan-access';
+import { getSubscriptionPlan } from '@/lib/subscription-plans';
+import { buildSubscriptionLifecycleUpdate } from '@/lib/subscription-lifecycle';
 
 function serializeHospital(hospital: any) {
   return {
@@ -40,8 +44,23 @@ function addDays(days: number) {
   return date;
 }
 
+function createManualReference(hospitalId: string) {
+  return `manual-${hospitalId}-${Date.now()}`;
+}
+
 function isValidStatus(value: unknown) {
   return ['trial', 'active', 'past_due', 'suspended', 'cancelled'].includes(String(value));
+}
+
+async function reconcileHospitalSubscription(hospital: any) {
+  if (!hospital) return hospital;
+  const lifecycleUpdate = buildSubscriptionLifecycleUpdate(hospital);
+  if (!lifecycleUpdate) return hospital;
+
+  return Hospital.findByIdAndUpdate(hospital._id, lifecycleUpdate, {
+    new: true,
+    runValidators: true,
+  }).lean();
 }
 
 export async function PATCH(
@@ -65,7 +84,11 @@ export async function PATCH(
       body.subscriptionStatus !== undefined ? String(body.subscriptionStatus) : undefined;
 
     if (body.subscriptionPlan !== undefined) {
-      update.subscriptionPlan = String(body.subscriptionPlan || 'trial').trim();
+      const planId = String(body.subscriptionPlan || 'clinic').trim();
+      const planSettings = getPlanSettings(planId);
+      update.subscriptionPlan = planId;
+      update['settings.planLimits'] = planSettings.planLimits;
+      update['settings.enabledFeatures'] = planSettings.enabledFeatures;
     }
 
     if (body.subscriptionStatus !== undefined) {
@@ -73,9 +96,6 @@ export async function PATCH(
         return NextResponse.json({ error: 'Invalid subscription status' }, { status: 400 });
       }
       update.subscriptionStatus = nextStatus;
-      if (body.subscriptionPlan === undefined) {
-        update.subscriptionPlan = nextStatus;
-      }
     }
 
     if (body.clinicTypes !== undefined) {
@@ -111,6 +131,11 @@ export async function PATCH(
 
     await connectDB();
 
+    const previousHospital = await Hospital.findById(id).lean();
+    if (!previousHospital) {
+      return NextResponse.json({ error: 'Hospital not found' }, { status: 404 });
+    }
+
     const hospital = await Hospital.findByIdAndUpdate(id, update, {
       new: true,
       runValidators: true,
@@ -119,10 +144,53 @@ export async function PATCH(
     if (!hospital) {
       return NextResponse.json({ error: 'Hospital not found' }, { status: 404 });
     }
+    const reconciledHospital = await reconcileHospitalSubscription(hospital);
+
+    if (nextStatus === 'active' && subscriptionDays && reconciledHospital) {
+      const plan = getSubscriptionPlan(String(reconciledHospital.subscriptionPlan || 'clinic'));
+      const now = new Date();
+      const previousExpiry = previousHospital.currentPeriodEndsAt
+        ? new Date(previousHospital.currentPeriodEndsAt)
+        : null;
+      const renewalStartsAt =
+        previousExpiry && Number.isFinite(previousExpiry.getTime()) && previousExpiry.getTime() > now.getTime()
+          ? previousExpiry
+          : now;
+      const renewalEndsAt = reconciledHospital.currentPeriodEndsAt || addDays(subscriptionDays);
+
+      await SubscriptionPayment.create({
+        hospitalId: String(reconciledHospital._id),
+        hospitalName: reconciledHospital.name,
+        hospitalSlug: reconciledHospital.slug,
+        planId: plan?.id || String(reconciledHospital.subscriptionPlan || 'clinic'),
+        planName: plan?.name || String(reconciledHospital.subscriptionPlan || 'Clinic'),
+        durationDays: subscriptionDays,
+        maxUsers: plan?.maxUsers || 0,
+        features: plan?.features || [],
+        amount: plan?.amount || 0,
+        amountKobo: plan?.amountKobo || 0,
+        currency: plan?.currency || 'NGN',
+        paymentProvider: 'manual',
+        providerReference: createManualReference(String(reconciledHospital._id)),
+        providerTransactionId: 'manual',
+        status: 'paid',
+        paidAt: now,
+        verifiedAt: now,
+        renewalStartsAt,
+        renewalEndsAt,
+        metadata: {
+          manualRenewal: true,
+          updatedByUserId: user.id,
+          updatedByName: user.name,
+          previousStatus: previousHospital.subscriptionStatus,
+          previousPlan: previousHospital.subscriptionPlan,
+        },
+      });
+    }
 
     return NextResponse.json({
       message: 'Hospital subscription updated',
-      hospital: serializeHospital(hospital),
+      hospital: serializeHospital(reconciledHospital),
     });
   } catch (error) {
     console.error('Update hospital subscription error:', error);

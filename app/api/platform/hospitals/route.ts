@@ -5,7 +5,11 @@ import User from '@/lib/models/User';
 import { getPagination, hasSuperAdminAccess } from '@/app/api/_lib/request-auth';
 import { jsonCreated, jsonOk } from '@/app/api/_lib/response';
 import { normalizeClinicTypes } from '@/lib/clinic-config';
+import { getPlanSettings } from '@/lib/plan-access';
+import { buildSubscriptionLifecycleUpdate } from '@/lib/subscription-lifecycle';
 import { RESERVED_TENANT_SLUGS, slugifyHospitalName } from '@/lib/tenant-routing';
+import SubscriptionPayment from '@/lib/models/SubscriptionPayment';
+import { getSubscriptionPlan } from '@/lib/subscription-plans';
 
 function serializeHospital(hospital: any) {
   return {
@@ -45,6 +49,10 @@ function addDays(days: number) {
   return date;
 }
 
+function createManualReference(hospitalId: string) {
+  return `manual-${hospitalId}-${Date.now()}`;
+}
+
 function resolveSubscriptionDates(body: any) {
   const trialDays = parseDurationDays(body.trialDays);
   const subscriptionDays = parseDurationDays(body.subscriptionDays);
@@ -64,6 +72,17 @@ function resolveSubscriptionDates(body: any) {
           ? addDays(subscriptionDays)
           : null,
   };
+}
+
+async function reconcileHospitalSubscription(hospital: any) {
+  if (!hospital) return hospital;
+  const lifecycleUpdate = buildSubscriptionLifecycleUpdate(hospital);
+  if (!lifecycleUpdate) return hospital;
+
+  return Hospital.findByIdAndUpdate(hospital._id, lifecycleUpdate, {
+    new: true,
+    runValidators: true,
+  }).lean();
 }
 
 export async function GET(request: NextRequest) {
@@ -97,9 +116,13 @@ export async function GET(request: NextRequest) {
       Hospital.countDocuments(query),
       Hospital.countDocuments({ ...query, isActive: { $ne: false } }),
     ]);
+    const reconciledHospitals = await Promise.all(hospitals.map(reconcileHospitalSubscription));
+    const serializedHospitals = reconciledHospitals
+      .filter(Boolean)
+      .map(serializeHospital);
 
-    return jsonOk(hospitals.map(serializeHospital), {
-      hospitals: hospitals.map(serializeHospital),
+    return jsonOk(serializedHospitals, {
+      hospitals: serializedHospitals,
       total,
       activeTotal,
       limit,
@@ -137,6 +160,8 @@ export async function POST(request: NextRequest) {
     }
 
     const subscriptionDates = resolveSubscriptionDates(body);
+    const subscriptionPlan = String(body.subscriptionPlan || 'clinic').trim();
+    const planSettings = getPlanSettings(subscriptionPlan);
 
     const hospital = new Hospital({
       name,
@@ -147,14 +172,49 @@ export async function POST(request: NextRequest) {
       address: body.address || '',
       logoUrl: body.logoUrl || '',
       brandColor: body.brandColor || '#275cc2',
-      subscriptionPlan: body.subscriptionPlan || body.subscriptionStatus || 'trial',
+      subscriptionPlan,
       subscriptionStatus: body.subscriptionStatus || 'trial',
       trialEndsAt: subscriptionDates.trialEndsAt,
       currentPeriodEndsAt: subscriptionDates.currentPeriodEndsAt,
-      settings: body.settings || {},
+      settings: {
+        ...(body.settings || {}),
+        planLimits: planSettings.planLimits,
+        enabledFeatures: planSettings.enabledFeatures,
+      },
     });
 
     await hospital.save();
+
+    if (hospital.subscriptionStatus === 'active' && subscriptionDates.currentPeriodEndsAt) {
+      const plan = getSubscriptionPlan(subscriptionPlan);
+      const now = new Date();
+
+      await SubscriptionPayment.create({
+        hospitalId: String(hospital._id),
+        hospitalName: hospital.name,
+        hospitalSlug: hospital.slug,
+        planId: plan?.id || subscriptionPlan,
+        planName: plan?.name || subscriptionPlan,
+        durationDays: parseDurationDays(body.subscriptionDays) || plan?.durationDays || 30,
+        maxUsers: plan?.maxUsers || 0,
+        features: plan?.features || [],
+        amount: plan?.amount || 0,
+        amountKobo: plan?.amountKobo || 0,
+        currency: plan?.currency || 'NGN',
+        paymentProvider: 'manual',
+        providerReference: createManualReference(String(hospital._id)),
+        providerTransactionId: 'manual',
+        status: 'paid',
+        paidAt: now,
+        verifiedAt: now,
+        renewalStartsAt: now,
+        renewalEndsAt: subscriptionDates.currentPeriodEndsAt,
+        metadata: {
+          manualRenewal: true,
+          createdDuringOnboarding: true,
+        },
+      });
+    }
 
     let adminUser = null;
     if (body.adminEmail && body.adminPassword && body.adminName) {

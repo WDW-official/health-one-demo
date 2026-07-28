@@ -16,6 +16,7 @@ import {
   getClinicTypeLabels,
   normalizeClinicTypes,
 } from '@/lib/clinic-config';
+import { getSubscriptionLifecycle } from '@/lib/subscription-lifecycle';
 import { slugifyHospitalName } from '@/lib/tenant-routing';
 import type { ClinicType, Hospital, HospitalSubscriptionStatus, User } from '@/lib/types';
 
@@ -25,6 +26,7 @@ type HospitalForm = {
   clinicTypes: ClinicType[];
   email: string;
   phone: string;
+  subscriptionPlan: string;
   subscriptionStatus: HospitalSubscriptionStatus;
   trialDays: string;
   subscriptionDays: string;
@@ -39,6 +41,7 @@ const emptyForm: HospitalForm = {
   clinicTypes: DEFAULT_CLINIC_TYPES,
   email: '',
   phone: '',
+  subscriptionPlan: 'clinic',
   subscriptionStatus: 'trial',
   trialDays: '14',
   subscriptionDays: '30',
@@ -48,6 +51,7 @@ const emptyForm: HospitalForm = {
 };
 
 type SubscriptionDraft = {
+  subscriptionPlan: string;
   subscriptionStatus: HospitalSubscriptionStatus;
   clinicTypes: ClinicType[];
   trialDays: string;
@@ -66,6 +70,11 @@ const SUBSCRIPTION_DAY_OPTIONS = [
   { label: '90 days', value: '90' },
   { label: '180 days', value: '180' },
   { label: '365 days', value: '365' },
+];
+
+const SUBSCRIPTION_PLAN_OPTIONS = [
+  { label: 'Clinic - ₦25,000/month - up to 10 users', value: 'clinic' },
+  { label: 'Professional - ₦35,000/month - up to 20 users', value: 'professional' },
 ];
 
 function statusClass(status: string) {
@@ -94,6 +103,13 @@ function getDaysRemaining(date?: Date | string | null) {
 }
 
 function expiryLabel(hospital: Hospital) {
+  const lifecycle = getSubscriptionLifecycle(hospital);
+  if (lifecycle.status === 'suspended') return 'Suspended';
+  if (lifecycle.status === 'past_due' && lifecycle.graceDaysRemaining !== null) {
+    if (lifecycle.graceDaysRemaining === 0) return 'Suspends today';
+    return `Suspends in ${lifecycle.graceDaysRemaining} day${lifecycle.graceDaysRemaining === 1 ? '' : 's'}`;
+  }
+
   const expiry = getExpiryDate(hospital);
   const days = getDaysRemaining(expiry);
   if (days === null) return 'No expiry date set';
@@ -104,6 +120,7 @@ function expiryLabel(hospital: Hospital) {
 
 function buildSubscriptionDraft(hospital: Hospital): SubscriptionDraft {
   return {
+    subscriptionPlan: hospital.subscriptionPlan || 'clinic',
     subscriptionStatus: hospital.subscriptionStatus || 'trial',
     clinicTypes: normalizeClinicTypes(hospital.clinicTypes),
     trialDays: '',
@@ -240,7 +257,7 @@ export default function PlatformDashboardPage() {
         clinicTypes: form.clinicTypes,
         email: form.email,
         phone: form.phone,
-        subscriptionPlan: form.subscriptionStatus,
+        subscriptionPlan: form.subscriptionPlan,
         subscriptionStatus: form.subscriptionStatus,
         trialDays: durationInput?.key === 'trialDays' ? Number(form.trialDays) || undefined : undefined,
         subscriptionDays:
@@ -266,6 +283,7 @@ export default function PlatformDashboardPage() {
     setSubscriptionDrafts((current) => {
       const currentDraft = current[hospitalId] || {
         subscriptionStatus: 'trial',
+        subscriptionPlan: 'clinic',
         clinicTypes: DEFAULT_CLINIC_TYPES,
         trialDays: '',
         subscriptionDays: '',
@@ -308,7 +326,7 @@ export default function PlatformDashboardPage() {
     try {
       const durationInput = getDurationInput(draft.subscriptionStatus);
       const response = await ApiClient.updatePlatformHospital(hospital.id, {
-        subscriptionPlan: draft.subscriptionStatus,
+        subscriptionPlan: draft.subscriptionPlan,
         subscriptionStatus: draft.subscriptionStatus,
         clinicTypes: draft.clinicTypes,
         trialDays: durationInput?.key === 'trialDays' ? Number(draft.trialDays) || undefined : undefined,
@@ -324,6 +342,7 @@ export default function PlatformDashboardPage() {
           ...current,
           [hospital.id]: {
             subscriptionStatus: updatedHospital.subscriptionStatus || 'trial',
+            subscriptionPlan: updatedHospital.subscriptionPlan || 'clinic',
             clinicTypes: normalizeClinicTypes(updatedHospital.clinicTypes),
             trialDays: '',
             subscriptionDays: '',
@@ -369,9 +388,14 @@ export default function PlatformDashboardPage() {
             <h1 className="text-3xl font-bold text-slate-950">Health One Platform</h1>
             <p className="mt-1 text-slate-600">Onboard hospitals and monitor subscription status.</p>
           </div>
-          <Link href="/dashboard" onClick={() => ApiClient.setActiveHospital(null)}>
-            <Button variant="outline">Open Demo Dashboard</Button>
-          </Link>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link href="/platform/payments">
+              <Button variant="outline">Subscription Payments</Button>
+            </Link>
+            <Link href="/dashboard" onClick={() => ApiClient.setActiveHospital(null)}>
+              <Button variant="outline">Open Demo Dashboard</Button>
+            </Link>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -451,6 +475,21 @@ export default function PlatformDashboardPage() {
                     ))}
                   </div>
                 </div>
+                <Select
+                  value={form.subscriptionPlan}
+                  onValueChange={(value) => updateForm('subscriptionPlan', value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select subscription plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUBSCRIPTION_PLAN_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Select
                   value={form.subscriptionStatus}
                   onValueChange={(value) => updateForm('subscriptionStatus', value as HospitalSubscriptionStatus)}
@@ -568,6 +607,9 @@ export default function PlatformDashboardPage() {
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold capitalize text-indigo-700">
+                              {String(hospital.subscriptionPlan || 'clinic').replace('-', ' ')}
+                            </span>
                             <span className={`rounded-full border px-3 py-1 text-xs font-semibold capitalize ${statusClass(hospital.subscriptionStatus)}`}>
                               {hospital.subscriptionStatus.replace('_', ' ')}
                             </span>
@@ -617,13 +659,30 @@ export default function PlatformDashboardPage() {
                         </div>
                       </div>
 
-                      <div className="grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-[150px_150px_auto] md:items-center">
+                      <div className="grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-[minmax(180px,1fr)_150px_150px_auto] md:items-center">
                         {(() => {
                           const draft = subscriptionDrafts[hospital.id] || buildSubscriptionDraft(hospital);
                           const durationInput = getDurationInput(draft.subscriptionStatus);
 
                           return (
                             <>
+                        <Select
+                          value={draft.subscriptionPlan || 'clinic'}
+                          onValueChange={(value) =>
+                            updateSubscriptionDraft(hospital.id, 'subscriptionPlan', value)
+                          }
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select plan" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SUBSCRIPTION_PLAN_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <Select
                           value={subscriptionDrafts[hospital.id]?.subscriptionStatus || hospital.subscriptionStatus}
                           onValueChange={(value) =>

@@ -4,6 +4,7 @@ import { connectDB } from '@/lib/mongodb';
 import User from '@/lib/models/User';
 import Hospital from '@/lib/models/Hospital';
 import { generateToken } from '@/lib/jwt';
+import { buildSubscriptionLifecycleUpdate, getSubscriptionLifecycle } from '@/lib/subscription-lifecycle';
 
 const RESET_TOKEN_EXPIRES_MS = 60 * 60 * 1000;
 
@@ -27,11 +28,19 @@ function serializeAuthUser(user: any) {
 }
 
 function isHospitalAccessBlocked(hospital: any) {
-  return (
-    !hospital ||
-    hospital.isActive === false ||
-    ['suspended', 'cancelled'].includes(String(hospital.subscriptionStatus))
-  );
+  if (!hospital) return true;
+  return getSubscriptionLifecycle(hospital).shouldBlockAccess;
+}
+
+async function reconcileHospitalSubscription(hospital: any) {
+  if (!hospital) return hospital;
+  const lifecycleUpdate = buildSubscriptionLifecycleUpdate(hospital);
+  if (!lifecycleUpdate) return hospital;
+
+  return Hospital.findByIdAndUpdate(hospital._id, lifecycleUpdate, {
+    new: true,
+    runValidators: true,
+  }).lean();
 }
 
 export async function POST(request: NextRequest) {
@@ -63,16 +72,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!user.isSuperAdmin && user.hospitalId) {
-      const hospital = await Hospital.findById(user.hospitalId).lean();
-      if (isHospitalAccessBlocked(hospital)) {
-        return NextResponse.json(
-          { error: 'This hospital account is suspended. Contact Health One to restore access.' },
-          { status: 403 }
-        );
-      }
-    }
-
     // Compare password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
@@ -80,6 +79,16 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid email or password' },
         { status: 401 }
       );
+    }
+
+    if (!user.isSuperAdmin && user.hospitalId) {
+      const hospital = await reconcileHospitalSubscription(await Hospital.findById(user.hospitalId).lean());
+      if (isHospitalAccessBlocked(hospital)) {
+        return NextResponse.json(
+          { error: 'This hospital account is suspended. Contact Health One to restore access.' },
+          { status: 403 }
+        );
+      }
     }
 
     if (user.mustChangePassword) {

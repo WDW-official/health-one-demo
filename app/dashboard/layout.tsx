@@ -50,6 +50,7 @@ import { usePathname } from 'next/navigation';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getActiveClinicProfile, setActiveClinicProfile } from '@/lib/active-clinic-profile';
 import { CLINIC_TYPE_OPTIONS, getClinicTypeLabel, getClinicTypeLabels, normalizeClinicTypes } from '@/lib/clinic-config';
+import { getSubscriptionLifecycle } from '@/lib/subscription-lifecycle';
 import { withHospitalDashboardPath } from '@/lib/tenant-routing';
 import type { ClinicType } from '@/lib/types';
 
@@ -82,12 +83,25 @@ function getDaysUntil(date?: Date | string | null) {
 }
 
 function getSubscriptionNotice(hospital: Hospital | null) {
+  if (!hospital) return null;
+  const lifecycle = getSubscriptionLifecycle(hospital);
   const days = getDaysUntil(getHospitalExpiry(hospital));
-  if (!hospital || days === null) return null;
+  if (days === null) return null;
 
   const label = hospital.subscriptionStatus === 'trial' ? 'trial' : 'subscription';
 
   if (days < 0) {
+    if (lifecycle.status === 'past_due' && lifecycle.graceDaysRemaining !== null) {
+      const graceDays = lifecycle.graceDaysRemaining;
+      return {
+        tone: graceDays <= 2 ? 'danger' : 'warning',
+        message:
+          graceDays === 0
+            ? `Your ${label} has expired and will be suspended today. Please contact Health One to renew access.`
+            : `Your ${label} expired ${lifecycle.daysPastExpiry} day${lifecycle.daysPastExpiry === 1 ? '' : 's'} ago. Account access will be suspended in ${graceDays} day${graceDays === 1 ? '' : 's'} if it is not renewed.`,
+      };
+    }
+
     return {
       tone: 'danger',
       message: `Your ${label} expired ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ago. Please contact Health One to renew access.`,

@@ -24,6 +24,8 @@ export interface IHospital extends Document {
     consultation?: Record<string, unknown>;
     inventory?: Record<string, unknown>;
     notifications?: Record<string, unknown>;
+    planLimits?: Record<string, unknown>;
+    enabledFeatures?: string[];
     branding?: {
       logoSize?: number;
       [key: string]: unknown;
@@ -115,6 +117,14 @@ const hospitalSchema = new Schema<IHospital>(
       notifications: {
         type: Schema.Types.Mixed,
         default: {},
+      },
+      planLimits: {
+        type: Schema.Types.Mixed,
+        default: {},
+      },
+      enabledFeatures: {
+        type: [String],
+        default: [],
       },
       branding: {
         type: Schema.Types.Mixed,

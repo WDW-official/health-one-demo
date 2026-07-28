@@ -27,6 +27,11 @@ export interface Hospital {
     consultation?: Record<string, unknown>;
     inventory?: Record<string, unknown>;
     notifications?: Record<string, unknown>;
+    planLimits?: {
+      maxUsers?: number;
+      [key: string]: unknown;
+    };
+    enabledFeatures?: string[];
     branding?: {
       logoSize?: number;
       [key: string]: unknown;

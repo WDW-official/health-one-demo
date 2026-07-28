@@ -4,6 +4,7 @@ import { connectDB } from '@/lib/mongodb';
 import Hospital from '@/lib/models/Hospital';
 import { getRequestUser, getUserHospitalId, isPlatformUser } from '@/app/api/_lib/request-auth';
 import { normalizeClinicTypes } from '@/lib/clinic-config';
+import { buildSubscriptionLifecycleUpdate, getSubscriptionLifecycle } from '@/lib/subscription-lifecycle';
 
 function serializeHospital(hospital: any) {
   return {
@@ -38,11 +39,19 @@ function clampLogoSize(value: unknown) {
 }
 
 function isHospitalAccessBlocked(hospital: any) {
-  return (
-    !hospital ||
-    hospital.isActive === false ||
-    ['suspended', 'cancelled'].includes(String(hospital.subscriptionStatus))
-  );
+  if (!hospital) return true;
+  return getSubscriptionLifecycle(hospital).shouldBlockAccess;
+}
+
+async function reconcileHospitalSubscription(hospital: any) {
+  if (!hospital) return hospital;
+  const lifecycleUpdate = buildSubscriptionLifecycleUpdate(hospital);
+  if (!lifecycleUpdate) return hospital;
+
+  return Hospital.findByIdAndUpdate(hospital._id, lifecycleUpdate, {
+    new: true,
+    runValidators: true,
+  }).lean();
 }
 
 export async function GET(request: NextRequest) {
@@ -63,7 +72,7 @@ export async function GET(request: NextRequest) {
 
     await connectDB();
 
-    const hospital = await Hospital.findById(hospitalId).lean();
+    const hospital = await reconcileHospitalSubscription(await Hospital.findById(hospitalId).lean());
     if (!hospital) {
       return NextResponse.json({ error: 'Hospital not found' }, { status: 404 });
     }
