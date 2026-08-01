@@ -21,7 +21,7 @@ import {
 import { getCurrentUser } from '@/lib/auth';
 import { ApiClient } from '@/lib/api-client';
 import { getActiveClinicProfile } from '@/lib/active-clinic-profile';
-import { getClinicTypeLabel, normalizeClinicTypes } from '@/lib/clinic-config';
+import { normalizeClinicTypes } from '@/lib/clinic-config';
 import { getProcedureCategory, getProcedureGroupsForClinicType, PROCEDURE_GROUPS, type ConsultationProcedure } from '@/lib/procedure-types';
 import { getErrorMessage } from '@/lib/error-message';
 import { toast } from '@/hooks/use-toast';
@@ -127,7 +127,6 @@ export default function ConsultationForm({
   const [activeClinicType, setActiveClinicType] = useState<ClinicType>(
     consultation?.clinicType || 'dental'
   );
-  const [availableClinicTypes, setAvailableClinicTypes] = useState<ClinicType[]>(['dental']);
   const [specialtyFields, setSpecialtyFields] = useState<ConsultationSpecialtyFields>(
     mergeSpecialtyFields(consultation?.specialtyFields)
   );
@@ -210,7 +209,6 @@ export default function ConsultationForm({
       setPatients(patientRes?.data || []);
       setAppointments(appointmentRes?.data || []);
       setDoctors((doctorRes?.data || []).filter((doctor: Doctor) => doctor.isActive));
-      setAvailableClinicTypes(clinicTypes);
       setActiveClinicType(nextClinicType);
       setSpecialtyFields(mergeSpecialtyFields(consultation?.specialtyFields));
       setAttachments((consultation as any)?.attachments || []);
@@ -283,22 +281,6 @@ export default function ConsultationForm({
       ...prev,
       doctorId,
     }));
-  };
-
-  const handleClinicTypeChange = (clinicType: ClinicType) => {
-    const nextGroups = getProcedureGroupsForClinicType(clinicType);
-    setActiveClinicType(clinicType);
-    setProcedures((current) =>
-      current.length > 0
-        ? current
-        : [
-            {
-              category: nextGroups[0].category,
-              procedure: nextGroups[0].procedures[0],
-              status: 'completed',
-            },
-          ]
-    );
   };
 
   const updateEyeClinicField = (
@@ -853,29 +835,6 @@ export default function ConsultationForm({
               </div>
             )}
           </div>
-
-          {availableClinicTypes.length > 1 && (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <label className="mb-2 block text-sm font-semibold text-slate-900">
-                Consultation Specialty
-              </label>
-              <Select
-                value={activeClinicType}
-                onValueChange={(value) => handleClinicTypeChange(value as ClinicType)}
-              >
-                <SelectTrigger className="w-full bg-white md:max-w-sm">
-                  <SelectValue placeholder="Select specialty" />
-                </SelectTrigger>
-                <SelectContent>
-                {availableClinicTypes.map((clinicType) => (
-                  <SelectItem key={clinicType} value={clinicType}>
-                    {getClinicTypeLabel(clinicType)}
-                  </SelectItem>
-                ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
           <div>
             <label className="block text-sm font-medium mb-1">Presenting Complaints</label>
