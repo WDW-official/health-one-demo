@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Building2, Clock, ExternalLink, Plus, Save, Search } from 'lucide-react';
+import { Activity, Building2, Clock, ExternalLink, Plus, Save, Search, ShieldCheck, TimerReset } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -398,19 +398,56 @@ export default function PlatformDashboardPage() {
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           {[
-            ['Hospitals', summary.total],
-            ['Active', summary.active],
-            ['Trial', summary.trial],
-            ['Needs Attention', summary.attention],
-          ].map(([label, value]) => (
-            <Card key={label}>
+            {
+              label: 'Hospitals',
+              value: summary.total,
+              Icon: Building2,
+              cardClass: 'border-blue-100 bg-blue-50/80',
+              iconClass: 'bg-blue-600 text-white',
+              labelClass: 'text-blue-700',
+              valueClass: 'text-blue-950',
+            },
+            {
+              label: 'Active',
+              value: summary.active,
+              Icon: ShieldCheck,
+              cardClass: 'border-emerald-100 bg-emerald-50/80',
+              iconClass: 'bg-emerald-600 text-white',
+              labelClass: 'text-emerald-700',
+              valueClass: 'text-emerald-950',
+            },
+            {
+              label: 'Trial',
+              value: summary.trial,
+              Icon: TimerReset,
+              cardClass: 'border-violet-100 bg-violet-50/80',
+              iconClass: 'bg-violet-600 text-white',
+              labelClass: 'text-violet-700',
+              valueClass: 'text-violet-950',
+            },
+            {
+              label: 'Needs Attention',
+              value: summary.attention,
+              Icon: Activity,
+              cardClass: 'border-amber-100 bg-amber-50/80',
+              iconClass: 'bg-amber-500 text-white',
+              labelClass: 'text-amber-700',
+              valueClass: 'text-amber-950',
+            },
+          ].map(({ label, value, Icon, cardClass, iconClass, labelClass, valueClass }) => (
+            <Card key={label} className={`${cardClass} shadow-sm`}>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-slate-600">{label}</CardTitle>
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className={`text-sm font-semibold ${labelClass}`}>{label}</CardTitle>
+                  <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconClass}`}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                </div>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold text-slate-950">{value}</p>
+                <p className={`text-3xl font-bold ${valueClass}`}>{value}</p>
               </CardContent>
             </Card>
           ))}
