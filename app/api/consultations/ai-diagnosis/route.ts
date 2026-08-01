@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getRequestUser, getUserHospitalId } from '@/app/api/_lib/request-auth';
+import { getRequestUser, getUserHospitalId, isPlatformUser } from '@/app/api/_lib/request-auth';
 import { jsonError, jsonOk } from '@/app/api/_lib/response';
 import { connectDB } from '@/lib/mongodb';
 import Hospital from '@/lib/models/Hospital';
@@ -45,14 +45,15 @@ export async function POST(request: NextRequest) {
     if (!user) return jsonError('Unauthorized', 401);
 
     const hospitalId = getUserHospitalId(user);
-    if (!hospitalId) return jsonError('Hospital context is required.', 400);
+    const isDemoContext = isPlatformUser(user) && (!hospitalId || hospitalId === 'demo');
+    if (!hospitalId && !isDemoContext) return jsonError('Hospital context is required.', 400);
 
     await connectDB();
 
-    const hospital = await Hospital.findById(hospitalId).lean();
-    if (!hospital) return jsonError('Hospital not found.', 404);
+    const hospital = isDemoContext ? null : await Hospital.findById(hospitalId).lean();
+    if (!hospital && !isDemoContext) return jsonError('Hospital not found.', 404);
 
-    if (!hasHospitalFeature(hospital, FEATURE_KEYS.aiAssistant)) {
+    if (!isDemoContext && !hasHospitalFeature(hospital, FEATURE_KEYS.aiAssistant)) {
       return jsonError("AI Doctor's assistant is available on the Professional plan.", 403);
     }
 

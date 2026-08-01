@@ -598,6 +598,9 @@ export default function DashboardLayout({
   const handleActiveClinicTypeChange = (clinicType: ClinicType) => {
     const hospitalKey = hospital?.id || hospital?.slug || 'demo';
     setActiveClinicType(setActiveClinicProfile(clinicType, clinicTypes, hospitalKey));
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 100);
   };
 
   const dismissSubscriptionNotice = () => {
@@ -628,6 +631,28 @@ export default function DashboardLayout({
         ))}
         </SelectContent>
       </Select>
+    </div>
+  ) : null;
+  const mobileActiveClinicSelector = hasMultipleClinicProfiles ? (
+    <div className="min-w-0 flex-1 md:hidden">
+      <div className="flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 text-sm text-slate-700 shadow-sm">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: brandColor }} />
+        <Select
+          value={activeClinicType}
+          onValueChange={(value) => handleActiveClinicTypeChange(value as ClinicType)}
+        >
+          <SelectTrigger className="h-8 min-w-0 flex-1 border-0 bg-transparent p-0 text-left text-sm font-semibold text-slate-900 shadow-none focus-visible:ring-0 [&>svg]:h-4 [&>svg]:w-4">
+            <SelectValue placeholder="Profile" />
+          </SelectTrigger>
+          <SelectContent align="center">
+            {CLINIC_TYPE_OPTIONS.filter((option) => clinicTypes.includes(option.id)).map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   ) : null;
 
@@ -746,10 +771,10 @@ export default function DashboardLayout({
       {/* Main Content */}
       <div className={`flex min-h-screen min-w-0 flex-col print:block print:min-h-0 print:pl-0 ${sidebarWidthClass}`}>
         {/* Top Header */}
-        <header className={`fixed left-0 right-0 top-0 z-40 flex items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 py-4 backdrop-blur-xl md:justify-end md:px-6 print:hidden ${sidebarWidthClass}`}>
+        <header className={`fixed left-0 right-0 top-0 z-40 flex items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-4 backdrop-blur-xl md:justify-end md:px-6 print:hidden ${sidebarWidthClass}`}>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"
           >
             {sidebarOpen ? (
               <X className="w-6 h-6" />
@@ -757,11 +782,12 @@ export default function DashboardLayout({
               <Menu className="w-6 h-6" />
             )}
           </button>
+          {mobileActiveClinicSelector}
           <div className="flex items-center gap-2">
             <div className="hidden md:block">{activeClinicSelector}</div>
             <Link
               href={withHospitalDashboardPath('/dashboard/chat', routeUser)}
-              className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"
             >
               <MessageCircle className="h-5 w-5" />
               {unreadChatCount > 0 && (
@@ -782,7 +808,6 @@ export default function DashboardLayout({
 
         {/* Page Content */}
         <main className="min-w-0 flex-1 overflow-auto p-4 pt-24 print:block print:overflow-visible print:p-0 md:p-6 md:pt-24">
-          {activeClinicSelector && <div className="mb-4 md:hidden">{activeClinicSelector}</div>}
           {subscriptionNotice && shouldShowSubscriptionNotice && (
             <div
               className={`mb-4 flex items-start gap-3 rounded-2xl border p-4 pr-3 text-sm print:hidden ${

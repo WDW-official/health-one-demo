@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import Family from '@/lib/models/Family';
 import Patient from '@/lib/models/Patient';
 import { Types } from 'mongoose';
 import { buildHospitalQuery, getRequestUser, hasSuperAdminAccess } from '../../_lib/request-auth';
@@ -15,6 +16,15 @@ async function normalizePatient(doc: any) {
     ...plain,
     id: plain.id || String(plain._id),
     mrn: plain.mrn || formatPatientMrn(prefix, 0),
+  };
+}
+
+function normalizeFamily(doc: any) {
+  if (!doc) return null;
+  const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  return {
+    ...plain,
+    id: plain.id || String(plain._id),
   };
 }
 
@@ -44,7 +54,23 @@ export async function GET(
       );
     }
 
-    const normalized = await normalizePatient(patient);
+    const [family, familyMembers] = patient.familyId
+      ? await Promise.all([
+          Family.findOne(buildHospitalQuery(user, { _id: patient.familyId })).lean(),
+          Patient.find(buildHospitalQuery(user, {
+            familyId: patient.familyId,
+            isActive: true,
+          }))
+            .sort({ dateOfBirth: 1, createdAt: 1 })
+            .lean(),
+        ])
+      : [null, []];
+
+    const normalized = {
+      ...(await normalizePatient(patient)),
+      family: normalizeFamily(family),
+      familyMembers: await Promise.all((familyMembers as any[]).map(normalizePatient)),
+    };
     return jsonOk(normalized, { patient: normalized });
   } catch (error) {
     console.error('Get patient error:', error);
@@ -75,6 +101,23 @@ export async function PUT(
 
     const body = await request.json();
 
+    let family: any = null;
+    if (body.familyId) {
+      family = await Family.findOne(buildHospitalQuery(user, { _id: body.familyId }));
+      if (!family) {
+        return NextResponse.json({ error: 'Family not found' }, { status: 404 });
+      }
+    }
+
+    const usesFamilyContact = Boolean(body.familyId && body.useFamilyContact);
+    if (!usesFamilyContact) {
+      for (const field of ['email', 'phone']) {
+        if (!String(body[field] || '').trim()) {
+          return NextResponse.json({ error: `${field} is required` }, { status: 400 });
+        }
+      }
+    }
+
     // Check for duplicate email/phone if changing
     if (body.email || body.phone) {
       const existing = await Patient.findOne(buildHospitalQuery(user, {
@@ -93,9 +136,19 @@ export async function PUT(
       }
     }
 
+    const update = {
+      ...body,
+      familyStatus: body.familyId ? 'family' : body.familyStatus || 'individual',
+      familyId: body.familyId || null,
+      useFamilyContact: usesFamilyContact,
+      address: body.address || family?.address || '',
+      emergencyContactName: body.emergencyContactName || family?.primaryContactName || '',
+      emergencyContactPhone: body.emergencyContactPhone || family?.primaryContactPhone || '',
+    };
+
     const patient = await Patient.findOneAndUpdate(
       buildHospitalQuery(user, { _id: id }),
-      body,
+      update,
       { new: true, runValidators: true }
     ).lean();
 

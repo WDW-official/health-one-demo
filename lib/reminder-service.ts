@@ -1,4 +1,5 @@
 import Appointment from '@/lib/models/Appointment';
+import Family from '@/lib/models/Family';
 import Patient from '@/lib/models/Patient';
 import Reminder from '@/lib/models/Reminder';
 import { sendClinicEmail } from '@/lib/email';
@@ -49,6 +50,19 @@ function buildWhatsAppUrl(phone: string, message: string) {
   return `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
 }
 
+async function getPatientContact(patient: any) {
+  let family: any = null;
+  if (patient?.useFamilyContact && patient?.familyId) {
+    family = await Family.findById(patient.familyId).lean();
+  }
+
+  return {
+    email: patient?.email || family?.primaryContactEmail || '',
+    phone: patient?.phone || family?.primaryContactPhone || '',
+    family,
+  };
+}
+
 export async function sendReminderEmail(reminderInput: any) {
   const reminder = normalizeReminder(reminderInput);
   const [patient, appointment] = await Promise.all([
@@ -58,6 +72,11 @@ export async function sendReminderEmail(reminderInput: any) {
 
   if (!patient) {
     throw new Error('Patient not found for reminder');
+  }
+
+  const contact = await getPatientContact(patient);
+  if (!contact.email) {
+    throw new Error('Patient or family email is required for email reminders');
   }
 
   const subject =
@@ -73,7 +92,7 @@ export async function sendReminderEmail(reminderInput: any) {
       : `Hello ${patient.firstName}, this is a reminder for your upcoming appointment.`);
 
   const delivery = await sendClinicEmail({
-    to: patient.email,
+    to: contact.email,
     subject,
     text,
     html: buildHtmlMessage(subject, text),
@@ -108,13 +127,15 @@ export async function sendReminderWhatsApp(reminderInput: any) {
     throw new Error('Patient not found for reminder');
   }
 
+  const contact = await getPatientContact(patient);
+
   const text =
     reminder.message ||
     (reminder.category === 'birthday'
       ? `Happy Birthday, ${patient.firstName} ${patient.lastName}!`
       : `Hello ${patient.firstName}, this is a reminder for your upcoming appointment.`);
 
-  const whatsappUrl = buildWhatsAppUrl(patient.phone, text);
+  const whatsappUrl = buildWhatsAppUrl(contact.phone, text);
   const updated = await Reminder.findByIdAndUpdate(
     reminder.id,
     {
@@ -129,7 +150,7 @@ export async function sendReminderWhatsApp(reminderInput: any) {
   return {
     delivery: {
       channel: 'whatsapp',
-      phone: normalizeWhatsAppPhone(patient.phone),
+      phone: normalizeWhatsAppPhone(contact.phone),
       url: whatsappUrl,
     },
     reminder: normalizeReminder(updated),

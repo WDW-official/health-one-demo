@@ -58,23 +58,45 @@ type InitializeSubscriptionPaymentData = {
 
 function getDefaultDemoHospitalSettings() {
   const now = new Date();
+  const demoClinicTypes: ClinicType[] = ['dental', 'family_medical', 'small_hospital', 'eye_clinic'];
 
   return {
     id: 'demo',
-    name: 'Health One Dental Clinic',
+    name: 'Health One Demo Hospital',
     slug: 'demo',
-    clinicTypes: ['dental'] as ClinicType[],
+    clinicTypes: demoClinicTypes,
     email: 'info@healthone.com',
     phone: '',
     address: '',
     logoUrl: '',
     brandColor: '#275cc2',
-    subscriptionPlan: 'demo',
+    subscriptionPlan: 'professional',
     subscriptionStatus: 'active',
     trialEndsAt: null,
     currentPeriodEndsAt: null,
     isActive: true,
     settings: {
+      planLimits: {
+        maxUsers: 20,
+      },
+      enabledFeatures: [
+        'patients',
+        'appointments',
+        'consultations',
+        'prescriptions',
+        'billing',
+        'staff_dashboard',
+        'cloud_hosting',
+        'whatsapp_email_support',
+        'workflow_support',
+        'department_access',
+        'analytics_dashboard',
+        'exportable_reports',
+        'priority_support',
+        'ai_assistant',
+        'clinic_insights',
+        'constant_consultation',
+      ],
       branding: {
         logoSize: 48,
       },
@@ -238,9 +260,24 @@ export class ApiClient {
     if (!stored) return getDefaultDemoHospitalSettings();
 
     try {
+      const parsed = JSON.parse(stored);
       return {
         ...getDefaultDemoHospitalSettings(),
-        ...JSON.parse(stored),
+        ...parsed,
+        clinicTypes: getDefaultDemoHospitalSettings().clinicTypes,
+        subscriptionPlan: parsed.subscriptionPlan === 'demo' ? 'professional' : parsed.subscriptionPlan || 'professional',
+        settings: {
+          ...getDefaultDemoHospitalSettings().settings,
+          ...(parsed.settings || {}),
+          enabledFeatures:
+            Array.isArray(parsed.settings?.enabledFeatures) && parsed.settings.enabledFeatures.length > 0
+              ? parsed.settings.enabledFeatures
+              : getDefaultDemoHospitalSettings().settings.enabledFeatures,
+          planLimits: {
+            ...getDefaultDemoHospitalSettings().settings.planLimits,
+            ...(parsed.settings?.planLimits || {}),
+          },
+        },
       };
     } catch {
       return getDefaultDemoHospitalSettings();
@@ -509,7 +546,34 @@ export class ApiClient {
   }
 
   static async searchPatients(query: string) {
-    return this.request(`/patients/search?q=${encodeURIComponent(query)}`);
+    const response = await this.request<any>(`/patients/search?q=${encodeURIComponent(query)}`);
+    return {
+      ...response,
+      data: normalizeArray(response?.data || []),
+      patients: normalizeArray(response?.patients || []),
+    };
+  }
+
+  static async getFamilies(params: ListParams = {}) {
+    const response = await this.request<any>(`/families${buildQuery(params)}`);
+    return {
+      ...response,
+      data: normalizeArray(response?.data || []),
+      families: normalizeArray(response?.families || []),
+    };
+  }
+
+  static async createFamily(familyData: any) {
+    const response = await this.request<any>('/families', {
+      method: 'POST',
+      body: JSON.stringify(familyData),
+    });
+    const family = normalizeDocument(response?.family || response?.data || {});
+    return {
+      ...response,
+      data: family,
+      family,
+    };
   }
 
   static async getPatientsByDoctor(doctorId: string) {

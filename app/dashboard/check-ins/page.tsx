@@ -76,15 +76,24 @@ function statusLabel(status: CheckInStatus) {
   return status.replace('_', ' ');
 }
 
+function checkInDoctorLabel(checkIn: CheckIn) {
+  if (!checkIn.doctorId || !checkIn.doctorName) return 'No doctor assigned';
+  return `Dr. ${checkIn.doctorName}`;
+}
+
 export default function CheckInsPage() {
   const [user] = useState<User | null>(() => getCurrentUser());
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [recentPatients, setRecentPatients] = useState<Patient[]>([]);
+  const [searchedPatients, setSearchedPatients] = useState<Patient[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [selectedDoctorId, setSelectedDoctorId] = useState('');
+  const [patientSearchQuery, setPatientSearchQuery] = useState('');
+  const [isPatientSearching, setIsPatientSearching] = useState(false);
   const [notes, setNotes] = useState('');
   const [startDateFilter, setStartDateFilter] = useState(formatDateInput(new Date()));
   const [endDateFilter, setEndDateFilter] = useState(formatDateInput(new Date()));
@@ -104,6 +113,21 @@ export default function CheckInsPage() {
     () => patients.find((patient) => patient.id === selectedPatientId),
     [patients, selectedPatientId]
   );
+  const patientPickerOptions = useMemo(() => {
+    const basePatients = patientSearchQuery.trim().length >= 2 ? searchedPatients : recentPatients;
+    if (!selectedPatient || basePatients.some((patient) => patient.id === selectedPatient.id)) {
+      return basePatients;
+    }
+    return [selectedPatient, ...basePatients];
+  }, [patientSearchQuery, recentPatients, searchedPatients, selectedPatient]);
+
+  const mergePatients = (currentPatients: Patient[], nextPatients: Patient[]) => {
+    const patientMap = new Map<string, Patient>();
+    [...nextPatients, ...currentPatients].forEach((patient) => {
+      if (patient.id) patientMap.set(patient.id, patient);
+    });
+    return Array.from(patientMap.values());
+  };
 
   const getCheckInParams = (limit = PAGE_SIZE, skip = (page - 1) * PAGE_SIZE) => ({
     limit,
@@ -121,16 +145,27 @@ export default function CheckInsPage() {
     setTotal(res?.total || 0);
   };
 
+  const loadRecentPatients = async () => {
+    const currentUser = getCurrentUser();
+    const patientsRes = await ApiClient.getAllPatients({
+      limit: 100,
+      skip: 0,
+      doctorId: currentUser?.role === 'doctor' ? currentUser.doctorId : undefined,
+    });
+    const loadedPatients = patientsRes?.data || [];
+    setRecentPatients(loadedPatients);
+    setPatients((current) => mergePatients(current, loadedPatients));
+  };
+
   useEffect(() => {
     const loadOptions = async () => {
       try {
         setIsLoading(true);
-        const currentUser = getCurrentUser();
         const [patientsRes, doctorsRes] = await Promise.all([
           ApiClient.getAllPatients({
-            limit: 250,
+            limit: 100,
             skip: 0,
-            doctorId: currentUser?.role === 'doctor' ? currentUser.doctorId : undefined,
+            doctorId: user?.role === 'doctor' ? user.doctorId : undefined,
           }),
           ApiClient.getAllDoctors({ limit: 100, skip: 0 }),
         ]);
@@ -138,10 +173,11 @@ export default function CheckInsPage() {
         const loadedPatients = patientsRes?.data || [];
         const loadedDoctors = doctorsRes?.data || [];
         setPatients(loadedPatients);
+        setRecentPatients(loadedPatients);
         setDoctors(loadedDoctors);
 
-        if (currentUser?.role === 'doctor' && currentUser.doctorId) {
-          setSelectedDoctorId(currentUser.doctorId);
+        if (user?.role === 'doctor' && user.doctorId) {
+          setSelectedDoctorId(user.doctorId);
         }
 
         await loadCheckIns();
@@ -160,6 +196,53 @@ export default function CheckInsPage() {
     loadOptions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!isCheckInModalOpen) return;
+
+    queueMicrotask(() => {
+      void loadRecentPatients().catch((error) => {
+        console.error('Failed to load recent patients:', error);
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCheckInModalOpen]);
+
+  useEffect(() => {
+    if (!isCheckInModalOpen) return;
+
+    const query = patientSearchQuery.trim();
+    if (query.length < 2) {
+      queueMicrotask(() => {
+        setSearchedPatients([]);
+      });
+      if (query.length === 0) {
+        queueMicrotask(() => {
+          void loadRecentPatients().catch((error) => {
+            console.error('Failed to reload recent patients:', error);
+          });
+        });
+      }
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setIsPatientSearching(true);
+        const response = await ApiClient.searchPatients(query);
+        const results = response?.patients || response?.data || [];
+        setSearchedPatients(results);
+        setPatients((current) => mergePatients(current, results));
+      } catch (error) {
+        console.error('Failed to search patients:', error);
+      } finally {
+        setIsPatientSearching(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientSearchQuery, isCheckInModalOpen]);
 
   useEffect(() => {
     if (!startDateFilter && !endDateFilter) return;
@@ -207,18 +290,16 @@ export default function CheckInsPage() {
     setSelectedPatientId(patientId);
 
     if (user?.role === 'doctor') return;
-
-    const patient = patients.find((item) => item.id === patientId);
-    setSelectedDoctorId(patient?.assignedDoctorId || '');
+    setSelectedDoctorId('');
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (!selectedPatientId || !selectedDoctorId) {
+    if (!selectedPatientId) {
       toast({
-        title: 'Patient and doctor required',
-        description: 'Select a patient and assign a doctor before checking in.',
+        title: 'Patient required',
+        description: 'Select a patient before checking in.',
         variant: 'destructive',
       });
       return;
@@ -228,17 +309,20 @@ export default function CheckInsPage() {
       setIsSubmitting(true);
       await ApiClient.createCheckIn({
         patientId: selectedPatientId,
-        doctorId: selectedDoctorId,
+        doctorId: selectedDoctorId || undefined,
         appointmentId: todayAppointment?.id,
         notes,
       });
 
       toast({
         title: 'Patient checked in',
-        description: `${selectedPatient?.firstName || 'Patient'} is now on the doctor dashboard.`,
+        description: selectedDoctorId
+          ? `${selectedPatient?.firstName || 'Patient'} is now on the doctor dashboard.`
+          : `${selectedPatient?.firstName || 'Patient'} has been checked in for a general visit.`,
       });
 
       setSelectedPatientId('');
+      setPatientSearchQuery('');
       if (user?.role !== 'doctor') setSelectedDoctorId('');
       setNotes('');
       setTodayAppointment(null);
@@ -321,7 +405,7 @@ export default function CheckInsPage() {
       const csvRows = rows.map((checkIn) => [
         checkIn.patientName,
         checkIn.patientMrn || '',
-        `Dr. ${checkIn.doctorName}`,
+        checkInDoctorLabel(checkIn),
         checkIn.appointmentNumber || (checkIn.appointmentId ? checkIn.appointmentId : 'Walk-in'),
         statusLabel(checkIn.status),
         checkIn.checkedInAt.toLocaleString(),
@@ -393,7 +477,7 @@ export default function CheckInsPage() {
           <DialogHeader>
             <DialogTitle>Check In Patient</DialogTitle>
             <DialogDescription>
-              Select a patient, assign a doctor, and today&apos;s appointment will be attached when one exists.
+              Select a patient. Assign a doctor only when the patient is seeing a doctor today.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -403,20 +487,34 @@ export default function CheckInsPage() {
                 <SearchableSelect
                   value={selectedPatientId}
                   onValueChange={handlePatientSelect}
-                  options={patients.map((patient) => ({
+                  options={patientPickerOptions.map((patient) => ({
                     value: patient.id,
                     label: `${patient.mrn || patient.id} • ${patient.firstName} ${patient.lastName}`,
-                    description: patient.phone,
+                    description: [patient.phone, patient.email].filter(Boolean).join(' • '),
                   }))}
                   placeholder="Select patient"
-                  searchPlaceholder="Search MRN or patient name..."
+                  searchPlaceholder="Search MRN, name, phone, or email..."
+                  searchValue={patientSearchQuery}
+                  onSearchChange={setPatientSearchQuery}
+                  isSearching={isPatientSearching}
                   emptyText="No patients found."
                   className="rounded-md"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium">Doctor</label>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <label className="block text-sm font-medium">Doctor</label>
+                  {selectedDoctorId && user?.role !== 'doctor' && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDoctorId('')}
+                      className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
                 <SearchableSelect
                   value={selectedDoctorId}
                   onValueChange={setSelectedDoctorId}
@@ -426,7 +524,7 @@ export default function CheckInsPage() {
                     label: `Dr. ${doctor.name}`,
                     description: doctor.specialization,
                   }))}
-                  placeholder="Assign doctor"
+                  placeholder="No doctor assigned"
                   searchPlaceholder="Search doctor..."
                   emptyText="No doctors found."
                   className="rounded-md"
@@ -438,7 +536,7 @@ export default function CheckInsPage() {
                 <Input
                   value={notes}
                   onChange={(event) => setNotes(event.target.value)}
-                  placeholder="Optional check-in note"
+                  placeholder="Reason for visit, e.g. scaling and polishing, pickup, enquiry, doctor visit..."
                 />
               </div>
             </div>
@@ -450,8 +548,10 @@ export default function CheckInsPage() {
                 <span>Appointment {todayAppointment.appointmentNumber || todayAppointment.id} will be attached.</span>
               ) : selectedPatientId && selectedDoctorId ? (
                 <span>No scheduled appointment today. This will be a walk-in check-in.</span>
+              ) : selectedPatientId ? (
+                <span>No doctor assigned. This will be a general visit check-in.</span>
               ) : (
-                <span>Select patient and doctor to match today&apos;s appointment.</span>
+                <span>Select a patient to create a check-in. Add a doctor to match today&apos;s appointment.</span>
               )}
             </div>
 
@@ -529,8 +629,9 @@ export default function CheckInsPage() {
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="All doctors" />
                 </SelectTrigger>
-                <SelectContent>
+                  <SelectContent>
                   <SelectItem value="all">All doctors</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
                   {doctors.map((doctor) => (
                     <SelectItem key={doctor.id} value={doctor.id}>
                       Dr. {doctor.name}
@@ -614,7 +715,16 @@ export default function CheckInsPage() {
                             MRN {checkIn.patientMrn || checkIn.patientId}
                           </p>
                         </td>
-                        <td className="py-3 px-4 text-gray-600">Dr. {checkIn.doctorName}</td>
+                        <td className="py-3 px-4 text-gray-600">
+                          {checkIn.doctorId && checkIn.doctorName ? (
+                            checkInDoctorLabel(checkIn)
+                          ) : (
+                            <span>
+                              <span className="block font-medium text-slate-700">No doctor assigned</span>
+                              <span className="block text-xs text-slate-500">General visit</span>
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3 px-4">
                           {checkIn.appointmentId ? (
                             <Link
@@ -667,7 +777,7 @@ export default function CheckInsPage() {
                                   </Link>
                                 </DropdownMenuItem>
                               )}
-                              {checkIn.status === 'waiting' && (
+                              {checkIn.status === 'waiting' && checkIn.doctorId && (
                                 <DropdownMenuItem onSelect={() => handleStatusChange(checkIn, 'with_doctor')}>
                                   <Stethoscope className="h-4 w-4" />
                                   With Doctor

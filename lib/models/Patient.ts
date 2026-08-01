@@ -8,6 +8,9 @@ export interface IPatient extends Document {
   lastName: string;
   dateOfBirth: string;
   familyStatus: 'individual' | 'family';
+  familyId?: string | null;
+  familyRelationship?: 'parent' | 'child' | 'spouse' | 'guardian' | 'other';
+  useFamilyContact?: boolean;
   gender: 'male' | 'female' | 'other';
   email: string;
   phone: string;
@@ -62,6 +65,20 @@ const patientSchema = new Schema<IPatient>(
       enum: ['individual', 'family'],
       default: 'individual',
     },
+    familyId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    familyRelationship: {
+      type: String,
+      enum: ['parent', 'child', 'spouse', 'guardian', 'other'],
+      default: null,
+    },
+    useFamilyContact: {
+      type: Boolean,
+      default: false,
+    },
     gender: {
       type: String,
       enum: ['male', 'female', 'other'],
@@ -69,30 +86,30 @@ const patientSchema = new Schema<IPatient>(
     },
     email: {
       type: String,
-      required: [true, 'Email is required'],
+      default: '',
       lowercase: true,
       index: 'text',
     },
     phone: {
       type: String,
-      required: [true, 'Phone is required'],
+      default: '',
       index: 'text',
     },
     address: {
       type: String,
-      required: [true, 'Address is required'],
+      default: '',
     },
     city: {
       type: String,
-      required: true,
+      default: '',
     },
     state: {
       type: String,
-      required: true,
+      default: '',
     },
     zipCode: {
       type: String,
-      required: true,
+      default: '',
     },
     insuranceProvider: {
       type: String,
@@ -151,6 +168,7 @@ const patientSchema = new Schema<IPatient>(
 // Text index for fast search
 patientSchema.index({ hospitalId: 1, mrn: 1 });
 patientSchema.index({ hospitalId: 1, assignedDoctorId: 1 });
+patientSchema.index({ hospitalId: 1, familyId: 1 });
 patientSchema.index({ mrn: 'text', firstName: 'text', lastName: 'text', email: 'text', phone: 'text' });
 
 async function getNextPatientMrn(hospitalId?: string | null) {

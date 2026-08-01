@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { Patient } from '@/lib/types';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Family, Patient } from '@/lib/types';
 import { ApiClient } from '@/lib/api-client';
 import { getErrorMessage } from '@/lib/error-message';
 import { toast } from '@/hooks/use-toast';
@@ -24,11 +25,18 @@ export default function PatientForm({ patient, isEditing = false }: PatientFormP
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [doctors, setDoctors] = useState<any[]>([]);
+  const [families, setFamilies] = useState<Family[]>([]);
+  const [familySearchQuery, setFamilySearchQuery] = useState('');
+  const [isFamilySearching, setIsFamilySearching] = useState(false);
+  const [familyInputMode, setFamilyInputMode] = useState<'select' | 'create'>('select');
   const [formData, setFormData] = useState({
     firstName: patient?.firstName || '',
     lastName: patient?.lastName || '',
     dateOfBirth: patient?.dateOfBirth || '',
     familyStatus: patient?.familyStatus || 'individual',
+    familyId: patient?.familyId || '',
+    familyRelationship: patient?.familyRelationship || 'child',
+    useFamilyContact: Boolean(patient?.useFamilyContact),
     gender: (patient?.gender || 'male') as 'male' | 'female' | 'other',
     email: patient?.email || '',
     phone: patient?.phone || '',
@@ -47,19 +55,61 @@ export default function PatientForm({ patient, isEditing = false }: PatientFormP
     assignedDoctorId: patient?.assignedDoctorId || '',
     assignedDoctorName: patient?.assignedDoctorName || '',
   });
+  const [familyForm, setFamilyForm] = useState({
+    familyName: '',
+    primaryContactName: '',
+    primaryContactPhone: '',
+    primaryContactEmail: '',
+    address: '',
+    notes: '',
+  });
+
+  const isFamilyRegistration = formData.familyStatus === 'family';
+  const canUseFamilyContact = isFamilyRegistration && formData.useFamilyContact;
+  const selectedFamily = useMemo(
+    () => families.find((family) => family.id === formData.familyId) || (patient?.family as Family | undefined) || null,
+    [families, formData.familyId, patient]
+  );
+  const familyOptions = useMemo(() => {
+    if (!selectedFamily || families.some((family) => family.id === selectedFamily.id)) return families;
+    return [selectedFamily, ...families];
+  }, [families, selectedFamily]);
 
   useEffect(() => {
-    const loadDoctors = async () => {
+    const loadOptions = async () => {
       try {
-        const res = await ApiClient.getAllDoctors();
-        const allDoctors = res?.data || [];
+        const [doctorRes, familyRes] = await Promise.all([
+          ApiClient.getAllDoctors(),
+          ApiClient.getFamilies({ limit: 50, skip: 0 }),
+        ]);
+        const allDoctors = doctorRes?.data || [];
         setDoctors(allDoctors.filter((d: any) => d.isActive));
+        setFamilies(familyRes?.data || []);
       } catch (error) {
-        console.error('Error loading doctors:', error);
+        console.error('Error loading patient form options:', error);
       }
     };
-    loadDoctors();
+    loadOptions();
   }, []);
+
+  useEffect(() => {
+    const query = familySearchQuery.trim();
+    if (query.length < 2) return;
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setIsFamilySearching(true);
+        const res = await ApiClient.getFamilies({ search: query, limit: 20, skip: 0 });
+        setFamilies(res?.data || []);
+      } catch (error) {
+        console.error('Error searching families:', error);
+      } finally {
+        setIsFamilySearching(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [familySearchQuery]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -80,6 +130,25 @@ export default function PatientForm({ patient, isEditing = false }: PatientFormP
     }));
   };
 
+  const handleFamilySelect = (familyId: string) => {
+    const family = families.find((item) => item.id === familyId);
+    setFormData((prev) => ({
+      ...prev,
+      familyId,
+      familyStatus: 'family',
+      address: prev.address || family?.address || '',
+      emergencyContactName: prev.emergencyContactName || family?.primaryContactName || '',
+      emergencyContactPhone: prev.emergencyContactPhone || family?.primaryContactPhone || '',
+    }));
+  };
+
+  const updateFamilyForm = (key: keyof typeof familyForm, value: string) => {
+    setFamilyForm((prev) => ({ ...prev, [key]: value }));
+    if (key === 'address') {
+      setFormData((prev) => ({ ...prev, address: prev.address || value }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -92,23 +161,44 @@ export default function PatientForm({ patient, isEditing = false }: PatientFormP
         setIsLoading(false);
         return;
       }
-      if (!formData.email.trim()) {
+      if (!canUseFamilyContact && !formData.email.trim()) {
         setError('Email is required');
         setIsLoading(false);
         return;
       }
-      if (!formData.phone.trim()) {
+      if (!canUseFamilyContact && !formData.phone.trim()) {
         setError('Phone number is required');
         setIsLoading(false);
         return;
       }
+      if (isFamilyRegistration && familyInputMode === 'select' && !formData.familyId) {
+        setError('Select a family or create a new family record');
+        setIsLoading(false);
+        return;
+      }
+      if (isFamilyRegistration && familyInputMode === 'create' && !isEditing) {
+        if (!familyForm.familyName.trim() || !familyForm.primaryContactName.trim() || !familyForm.primaryContactPhone.trim()) {
+          setError('Family name, primary contact name, and primary contact phone are required');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      const payload = {
+        ...formData,
+        familyId: isFamilyRegistration && familyInputMode === 'select' ? formData.familyId : '',
+        familyStatus: isFamilyRegistration ? 'family' : 'individual',
+        familyRelationship: isFamilyRegistration ? formData.familyRelationship : undefined,
+        useFamilyContact: canUseFamilyContact,
+        family: isFamilyRegistration && familyInputMode === 'create' && !isEditing ? familyForm : undefined,
+      };
 
       if (isEditing && patient) {
-        await ApiClient.updatePatient(patient.id, formData);
+        await ApiClient.updatePatient(patient.id, payload);
         toast({ title: 'Patient updated', description: 'The patient record was saved successfully.' });
         router.push(`/dashboard/patients/${patient.id}`);
       } else {
-        const res = await ApiClient.createPatient(formData);
+        const res = await ApiClient.createPatient(payload);
         const newPatient = res?.data;
         toast({ title: 'Patient created', description: `MRN ${newPatient?.mrn || 'created'} was added successfully.` });
         router.push(`/dashboard/patients/${newPatient?.id || newPatient?._id}`);
@@ -177,19 +267,24 @@ export default function PatientForm({ patient, isEditing = false }: PatientFormP
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Family Status</label>
+                <label className="block text-sm font-medium mb-1">Registration Type</label>
                 <Select
                   value={formData.familyStatus}
                   onValueChange={(value) =>
-                    setFormData((current) => ({ ...current, familyStatus: value as typeof current.familyStatus }))
+                    setFormData((current) => ({
+                      ...current,
+                      familyStatus: value as typeof current.familyStatus,
+                      familyId: value === 'family' ? current.familyId : '',
+                      useFamilyContact: value === 'family' ? current.useFamilyContact : false,
+                    }))
                   }
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select family status" />
+                    <SelectValue placeholder="Select registration type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="individual">Individual</SelectItem>
-                    <SelectItem value="family">Family</SelectItem>
+                    <SelectItem value="individual">Individual Patient</SelectItem>
+                    <SelectItem value="family">Add to Family</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -213,6 +308,158 @@ export default function PatientForm({ patient, isEditing = false }: PatientFormP
               </div>
             </div>
           </div>
+
+          {isFamilyRegistration && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Family Record</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Link this patient to a family so children can use parent or guardian contact details.
+                  </p>
+                </div>
+                {!isEditing && (
+                  <Select
+                    value={familyInputMode}
+                    onValueChange={(value) => setFamilyInputMode(value as typeof familyInputMode)}
+                  >
+                    <SelectTrigger className="w-full bg-white md:w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="select">Existing Family</SelectItem>
+                      <SelectItem value="create">Create Family</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {familyInputMode === 'select' || isEditing ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Family</label>
+                    <SearchableSelect
+                      value={formData.familyId}
+                      onValueChange={handleFamilySelect}
+                      options={familyOptions.map((family) => ({
+                        value: family.id,
+                        label: family.familyName,
+                        description: [family.primaryContactName, family.primaryContactPhone, family.primaryContactEmail]
+                          .filter(Boolean)
+                          .join(' • '),
+                      }))}
+                      placeholder="Search or select family..."
+                      searchPlaceholder="Search family, parent phone, or email..."
+                      searchValue={familySearchQuery}
+                      onSearchChange={setFamilySearchQuery}
+                      isSearching={isFamilySearching}
+                      emptyText="No families found."
+                    />
+                  </div>
+                  {selectedFamily && (
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                      <p className="font-semibold text-slate-900">{selectedFamily.familyName}</p>
+                      <p className="mt-1 text-slate-600">{selectedFamily.primaryContactName}</p>
+                      <p className="text-slate-500">{selectedFamily.primaryContactPhone}</p>
+                      {selectedFamily.primaryContactEmail && (
+                        <p className="text-slate-500">{selectedFamily.primaryContactEmail}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Family Name *</label>
+                    <Input
+                      value={familyForm.familyName}
+                      onChange={(event) => updateFamilyForm('familyName', event.target.value)}
+                      placeholder="Adebayo Family"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Parent/Guardian Name *</label>
+                    <Input
+                      value={familyForm.primaryContactName}
+                      onChange={(event) => updateFamilyForm('primaryContactName', event.target.value)}
+                      placeholder="Mrs. Adebayo"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Parent/Guardian Phone *</label>
+                    <Input
+                      type="tel"
+                      value={familyForm.primaryContactPhone}
+                      onChange={(event) => updateFamilyForm('primaryContactPhone', event.target.value)}
+                      placeholder="080..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Parent/Guardian Email</label>
+                    <Input
+                      type="email"
+                      value={familyForm.primaryContactEmail}
+                      onChange={(event) => updateFamilyForm('primaryContactEmail', event.target.value)}
+                      placeholder="email@email.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Family Address</label>
+                    <Input
+                      value={familyForm.address}
+                      onChange={(event) => updateFamilyForm('address', event.target.value)}
+                      placeholder="Family address"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Family Notes</label>
+                    <Input
+                      value={familyForm.notes}
+                      onChange={(event) => updateFamilyForm('notes', event.target.value)}
+                      placeholder="Optional family note"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Relationship</label>
+                  <Select
+                    value={formData.familyRelationship}
+                    onValueChange={(value) =>
+                      setFormData((current) => ({ ...current, familyRelationship: value as typeof current.familyRelationship }))
+                    }
+                  >
+                    <SelectTrigger className="w-full bg-white">
+                      <SelectValue placeholder="Select relationship" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="child">Child</SelectItem>
+                      <SelectItem value="parent">Parent</SelectItem>
+                      <SelectItem value="spouse">Spouse</SelectItem>
+                      <SelectItem value="guardian">Guardian</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <label className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                  <Checkbox
+                    checked={formData.useFamilyContact}
+                    onCheckedChange={(checked) =>
+                      setFormData((current) => ({ ...current, useFamilyContact: Boolean(checked) }))
+                    }
+                  />
+                  <span>
+                    <span className="block font-semibold text-slate-900">Use family contact details</span>
+                    <span className="block text-xs text-slate-500">
+                      Phone and email can be left blank for children using parent or guardian contact.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          )}
 
           {/* Assign Doctor */}
           <div>
@@ -241,25 +488,29 @@ export default function PatientForm({ patient, isEditing = false }: PatientFormP
             <h3 className="text-lg font-semibold mb-4">Contact Information</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Email *</label>
+                <label className="block text-sm font-medium mb-1">
+                  Email {canUseFamilyContact ? '' : '*'}
+                </label>
                 <Input
                   type="email"
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
-                  placeholder="john@example.com"
-                  required
+                  placeholder={canUseFamilyContact ? 'Optional when using family contact' : 'john@example.com'}
+                  required={!canUseFamilyContact}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Phone *</label>
+                <label className="block text-sm font-medium mb-1">
+                  Phone {canUseFamilyContact ? '' : '*'}
+                </label>
                 <Input
                   type="tel"
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
                   placeholder="555-0100"
-                  required
+                  required={!canUseFamilyContact}
                 />
               </div>
               <div>

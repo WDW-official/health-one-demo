@@ -21,6 +21,9 @@ interface SearchableSelectProps {
   placeholder?: string;
   searchPlaceholder?: string;
   emptyText?: string;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  isSearching?: boolean;
   disabled?: boolean;
   className?: string;
 }
@@ -32,6 +35,9 @@ export function SearchableSelect({
   placeholder = 'Select an option',
   searchPlaceholder = 'Search...',
   emptyText = 'No results found.',
+  searchValue,
+  onSearchChange,
+  isSearching,
   disabled,
   className,
 }: SearchableSelectProps) {
@@ -60,9 +66,13 @@ export function SearchableSelect({
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
         <Command>
-          <CommandInput placeholder={searchPlaceholder} />
+          <CommandInput
+            placeholder={searchPlaceholder}
+            value={searchValue}
+            onValueChange={onSearchChange}
+          />
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandEmpty>{isSearching ? 'Searching...' : emptyText}</CommandEmpty>
             <CommandGroup>
               {options.map((option) => (
                 <CommandItem

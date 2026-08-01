@@ -216,6 +216,7 @@ export default function PatientDetailPage() {
   }
 
   const age = new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear();
+  const familyMembers = Array.isArray(patient.familyMembers) ? patient.familyMembers : [];
 
   const timelineItems = [
     ...appointments.map((appointment) => ({
@@ -404,6 +405,68 @@ export default function PatientDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {patient.family && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Family</CardTitle>
+            <CardDescription>Linked parent, guardian, and household contact details</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-teal-700">Family Record</p>
+              <p className="mt-2 text-lg font-bold text-slate-950">{patient.family.familyName}</p>
+              <div className="mt-4 space-y-2 text-sm">
+                <div>
+                  <p className="text-slate-500">Primary Contact</p>
+                  <p className="font-semibold text-slate-900">{patient.family.primaryContactName}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Phone</p>
+                  <p className="font-semibold text-slate-900">{patient.family.primaryContactPhone}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Email</p>
+                  <p className="font-semibold text-slate-900">{patient.family.primaryContactEmail || 'Not provided'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Relationship</p>
+                  <p className="font-semibold capitalize text-slate-900">{patient.familyRelationship || 'other'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-3 text-sm font-semibold text-slate-900">Family Members</p>
+              {familyMembers.length === 0 ? (
+                <p className="rounded-lg border border-dashed p-4 text-sm text-slate-500">
+                  No other family members linked yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {familyMembers.map((member: any) => (
+                    <Link
+                      key={member.id}
+                      href={`/dashboard/patients/${member.id}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-950">
+                          {member.firstName} {member.lastName}
+                        </p>
+                        <p className="text-xs font-medium text-teal-700">MRN {member.mrn || member.id}</p>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold capitalize text-slate-700">
+                        {member.familyRelationship || 'other'}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">

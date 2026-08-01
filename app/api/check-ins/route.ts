@@ -66,7 +66,9 @@ function getRangeFromParams(searchParams: URLSearchParams) {
   return undefined;
 }
 
-async function findTodayAppointment(patientId: string, doctorId: string, hospitalId?: string | null) {
+async function findTodayAppointment(patientId: string, doctorId?: string | null, hospitalId?: string | null) {
+  if (!doctorId) return null;
+
   const today = getDayRange();
   if (!today) return null;
 
@@ -103,6 +105,7 @@ export async function GET(request: NextRequest) {
     }
 
     let query: any = buildHospitalQuery(user);
+    const andConditions: any[] = [];
 
     if (status && status !== 'all') query.status = status;
     if (patientId) query.patientId = patientId;
@@ -112,6 +115,10 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
       if (user.doctorId) query.doctorId = user.doctorId;
+    } else if (doctorId === 'unassigned') {
+      andConditions.push({
+        $or: [{ doctorId: null }, { doctorId: '' }, { doctorId: { $exists: false } }],
+      });
     } else if (doctorId) {
       query.doctorId = doctorId;
     }
@@ -121,15 +128,18 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      query = {
-        ...query,
+      andConditions.push({
         $or: [
           { patientName: { $regex: escaped, $options: 'i' } },
           { patientMrn: { $regex: escaped, $options: 'i' } },
           { checkedInByName: { $regex: escaped, $options: 'i' } },
           { appointmentNumber: { $regex: escaped, $options: 'i' } },
         ],
-      };
+      });
+    }
+
+    if (andConditions.length > 0) {
+      query = { ...query, $and: andConditions };
     }
 
     const checkIns = (await CheckIn.find(query)
@@ -158,27 +168,31 @@ export async function POST(request: NextRequest) {
     await connectDB();
 
     const body = await request.json();
-    const required = ['patientId', 'doctorId'];
+    const required = ['patientId'];
     for (const field of required) {
       if (!body[field]) {
         return NextResponse.json({ error: `${field} is required` }, { status: 400 });
       }
     }
 
-    if (user.role === 'doctor' && user.doctorId && body.doctorId !== user.doctorId) {
+    const requestedDoctorId = body.doctorId || (user.role === 'doctor' ? user.doctorId : null);
+
+    if (user.role === 'doctor' && user.doctorId && requestedDoctorId !== user.doctorId) {
       return NextResponse.json({ error: 'Doctors can only check in patients for themselves' }, { status: 403 });
     }
 
     const [patient, doctor] = await Promise.all([
       Patient.findOne(buildHospitalQuery(user, { _id: body.patientId })),
-      Doctor.findOne(buildHospitalQuery(user, { _id: body.doctorId })),
+      requestedDoctorId
+        ? Doctor.findOne(buildHospitalQuery(user, { _id: requestedDoctorId }))
+        : Promise.resolve(null),
     ]);
 
     if (!patient) {
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
     }
 
-    if (!doctor) {
+    if (requestedDoctorId && !doctor) {
       return NextResponse.json({ error: 'Doctor not found' }, { status: 404 });
     }
 
@@ -189,7 +203,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
       }
 
-      if (appointment.patientId !== body.patientId || appointment.doctorId !== body.doctorId) {
+      if (appointment.patientId !== body.patientId || (requestedDoctorId && appointment.doctorId !== requestedDoctorId)) {
         return NextResponse.json(
           { error: 'Appointment does not match the selected patient and doctor' },
           { status: 400 }
@@ -210,8 +224,8 @@ export async function POST(request: NextRequest) {
       }
 
       appointment = await ensureAppointmentNumber(appointment);
-    } else {
-      appointment = await findTodayAppointment(body.patientId, body.doctorId, user.hospitalId || null);
+    } else if (requestedDoctorId) {
+      appointment = await findTodayAppointment(body.patientId, requestedDoctorId, user.hospitalId || null);
     }
 
     const today = getDayRange();
@@ -236,8 +250,8 @@ export async function POST(request: NextRequest) {
       patientId: body.patientId,
       patientName: `${patient.firstName} ${patient.lastName}`,
       patientMrn: patient.mrn,
-      doctorId: body.doctorId,
-      doctorName: doctor.name,
+      doctorId: requestedDoctorId || null,
+      doctorName: doctor?.name || '',
       appointmentId: appointment ? String(appointment._id || appointment.id) : null,
       appointmentNumber: appointment?.appointmentNumber || null,
       checkedInByUserId: user.id,

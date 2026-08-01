@@ -116,6 +116,11 @@ export interface Patient {
   lastName: string;
   dateOfBirth: string;
   familyStatus?: 'individual' | 'family';
+  familyId?: string | null;
+  familyRelationship?: 'parent' | 'child' | 'spouse' | 'guardian' | 'other';
+  useFamilyContact?: boolean;
+  family?: Family | null;
+  familyMembers?: Patient[];
   gender: 'male' | 'female' | 'other';
   email: string;
   phone: string;
@@ -133,6 +138,19 @@ export interface Patient {
   emergencyContactPhone: string;
   assignedDoctorId?: string;
   assignedDoctorName?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Family {
+  id: string;
+  hospitalId?: string | null;
+  familyName: string;
+  primaryContactName: string;
+  primaryContactPhone: string;
+  primaryContactEmail?: string;
+  address?: string;
+  notes?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -252,8 +270,8 @@ export interface CheckIn {
   patientId: string;
   patientName: string;
   patientMrn?: string;
-  doctorId: string;
-  doctorName: string;
+  doctorId?: string | null;
+  doctorName?: string;
   appointmentId?: string;
   appointmentNumber?: string;
   checkedInByUserId: string;

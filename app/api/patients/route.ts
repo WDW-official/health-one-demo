@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import Family from '@/lib/models/Family';
 import Patient from '@/lib/models/Patient';
 import { jsonCreated, jsonError, jsonOk } from '../_lib/response';
 import { buildHospitalQuery, getPagination, getRequestUser, getUserHospitalId, withHospitalId } from '../_lib/request-auth';
@@ -19,6 +20,31 @@ function normalizePatient(doc: any) {
     id: plain.id || String(plain._id),
     mrn: plain.mrn || `ARC${String(String(plain._id).slice(-6)).toUpperCase()}`,
   };
+}
+
+async function resolveFamily(user: any, body: any) {
+  if (body.familyId) {
+    return Family.findOne(buildHospitalQuery(user, { _id: body.familyId }));
+  }
+
+  const familyInput = body.family;
+  if (!familyInput) return null;
+
+  const required = ['familyName', 'primaryContactName', 'primaryContactPhone'];
+  for (const field of required) {
+    if (!String(familyInput[field] || '').trim()) {
+      throw new Error(`${field} is required to create a family`);
+    }
+  }
+
+  return Family.create(withHospitalId(user, {
+    familyName: String(familyInput.familyName || '').trim(),
+    primaryContactName: String(familyInput.primaryContactName || '').trim(),
+    primaryContactPhone: String(familyInput.primaryContactPhone || '').trim(),
+    primaryContactEmail: String(familyInput.primaryContactEmail || '').trim().toLowerCase(),
+    address: String(familyInput.address || '').trim(),
+    notes: String(familyInput.notes || '').trim(),
+  }));
 }
 
 export async function GET(request: NextRequest) {
@@ -96,9 +122,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const hospitalId = getUserHospitalId(user);
     const mrnPrefix = await getHospitalMrnPrefix(hospitalId);
+    const family = await resolveFamily(user, body);
+    const usesFamilyContact = Boolean(body.useFamilyContact && family);
 
     // Validate required fields
-    const required = ['firstName', 'lastName', 'dateOfBirth', 'email', 'phone', 'emergencyContactName', 'emergencyContactPhone'];
+    const required = ['firstName', 'lastName', 'dateOfBirth'];
+    if (!usesFamilyContact) {
+      required.push('email', 'phone');
+    }
     for (const field of required) {
       if (!body[field]) {
         return NextResponse.json(
@@ -108,10 +139,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (body.familyStatus === 'family' && !family) {
+      return NextResponse.json({ error: 'Family record is required for family patients' }, { status: 400 });
+    }
+
     // Check if patient with email/phone already exists
-    const existing = await Patient.findOne(buildHospitalQuery(user, {
-      $or: [{ email: body.email }, { phone: body.phone }],
-    }));
+    const duplicateChecks = [
+      ...(body.email ? [{ email: String(body.email).toLowerCase() }] : []),
+      ...(body.phone ? [{ phone: body.phone }] : []),
+    ];
+    const existing = duplicateChecks.length
+      ? await Patient.findOne(buildHospitalQuery(user, { $or: duplicateChecks }))
+      : null;
 
     if (existing) {
       return NextResponse.json(
@@ -122,7 +161,17 @@ export async function POST(request: NextRequest) {
 
     // Create new patient. MRN must follow the highest existing MRN, not patient count.
     const patient = new Patient({
-      ...withHospitalId(user, body),
+      ...withHospitalId(user, {
+        ...body,
+        familyStatus: family ? 'family' : body.familyStatus || 'individual',
+        familyId: family ? String(family._id || family.id) : body.familyId || null,
+        useFamilyContact: usesFamilyContact,
+        email: usesFamilyContact ? String(body.email || '') : body.email,
+        phone: usesFamilyContact ? String(body.phone || '') : body.phone,
+        address: body.address || family?.address || '',
+        emergencyContactName: body.emergencyContactName || family?.primaryContactName || '',
+        emergencyContactPhone: body.emergencyContactPhone || family?.primaryContactPhone || '',
+      }),
       mrn: normalizePatientMrn(body.mrn, mrnPrefix) || (await getNextPatientMrnForHospital(Patient, hospitalId)),
     });
     await patient.save();

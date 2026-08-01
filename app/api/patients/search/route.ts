@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import Family from '@/lib/models/Family';
 import Patient from '@/lib/models/Patient';
 import { jsonError, jsonOk } from '../../_lib/response';
 import { buildHospitalQuery, getRequestUser } from '../../_lib/request-auth';
@@ -20,6 +21,18 @@ export async function GET(request: NextRequest) {
     }
 
     const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const matchingFamilies = await Family.find(buildHospitalQuery(user, {
+      $or: [
+        { familyName: { $regex: escaped, $options: 'i' } },
+        { primaryContactName: { $regex: escaped, $options: 'i' } },
+        { primaryContactPhone: { $regex: escaped, $options: 'i' } },
+        { primaryContactEmail: { $regex: escaped, $options: 'i' } },
+      ],
+    }))
+      .select('_id')
+      .limit(50)
+      .lean();
+    const familyIds = matchingFamilies.map((family: any) => String(family._id));
     const patients = await Patient.find(buildHospitalQuery(user, {
       isActive: true,
       $or: [
@@ -28,6 +41,7 @@ export async function GET(request: NextRequest) {
         { lastName: { $regex: escaped, $options: 'i' } },
         { email: { $regex: escaped, $options: 'i' } },
         { phone: { $regex: escaped, $options: 'i' } },
+        ...(familyIds.length > 0 ? [{ familyId: { $in: familyIds } }] : []),
       ],
     }))
       .sort({ createdAt: -1 })

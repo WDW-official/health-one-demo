@@ -7,8 +7,8 @@ export interface ICheckIn extends Document {
   patientId: string;
   patientName: string;
   patientMrn?: string;
-  doctorId: string;
-  doctorName: string;
+  doctorId?: string | null;
+  doctorName?: string;
   appointmentId?: string;
   appointmentNumber?: string;
   checkedInByUserId: string;
@@ -46,12 +46,12 @@ const checkInSchema = new Schema<ICheckIn>(
     },
     doctorId: {
       type: String,
-      required: [true, 'Doctor ID is required'],
+      default: null,
       index: true,
     },
     doctorName: {
       type: String,
-      required: true,
+      default: '',
       trim: true,
     },
     appointmentId: {
