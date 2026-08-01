@@ -134,6 +134,12 @@
       linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(245, 250, 249, 0.92));
     background-attachment: fixed;
   }
+  .dark body {
+    background-image:
+      radial-gradient(circle at top left, rgba(20, 184, 166, 0.12), transparent 32%),
+      radial-gradient(circle at top right, rgba(59, 130, 246, 0.1), transparent 24%),
+      linear-gradient(180deg, rgba(2, 6, 23, 1), rgba(15, 23, 42, 0.98));
+  }
   ::selection {
     background: color-mix(in oklab, var(--primary) 22%, white);
     color: var(--foreground);
@@ -154,5 +160,56 @@
       linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
       linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
     background-size: 32px 32px;
+  }
+
+  .dark .glass-panel {
+    @apply border-slate-800/80 bg-slate-950/80 shadow-black/30;
+  }
+
+  .dark .bg-white,
+  .dark .bg-slate-50,
+  .dark .bg-gray-50 {
+    background-color: rgb(15 23 42 / 0.92) !important;
+  }
+
+  .dark .bg-white\/80,
+  .dark .bg-white\/90,
+  .dark .bg-white\/95 {
+    background-color: rgb(15 23 42 / 0.86) !important;
+  }
+
+  .dark aside .bg-white {
+    background-color: rgb(255 255 255) !important;
+  }
+
+  .dark .text-gray-900,
+  .dark .text-slate-950,
+  .dark .text-slate-900 {
+    color: rgb(248 250 252) !important;
+  }
+
+  .dark .text-gray-700,
+  .dark .text-slate-700,
+  .dark .text-gray-600,
+  .dark .text-slate-600 {
+    color: rgb(203 213 225) !important;
+  }
+
+  .dark .text-gray-500,
+  .dark .text-slate-500 {
+    color: rgb(148 163 184) !important;
+  }
+
+  .dark .border-slate-200,
+  .dark .border-gray-200,
+  .dark .border-slate-200\/80,
+  .dark .border-gray-300 {
+    border-color: rgb(51 65 85 / 0.9) !important;
+  }
+
+  .dark .hover\:bg-slate-50:hover,
+  .dark .hover\:bg-gray-50:hover,
+  .dark .hover\:bg-muted\/50:hover {
+    background-color: rgb(30 41 59 / 0.9) !important;
   }
 }

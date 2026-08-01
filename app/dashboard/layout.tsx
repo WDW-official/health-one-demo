@@ -51,6 +51,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { getActiveClinicProfile, setActiveClinicProfile } from '@/lib/active-clinic-profile';
 import { CLINIC_TYPE_OPTIONS, getClinicTypeLabel, getClinicTypeLabels, normalizeClinicTypes } from '@/lib/clinic-config';
 import { getSubscriptionLifecycle } from '@/lib/subscription-lifecycle';
+import { applyThemeMode, normalizeThemeMode } from '@/lib/theme-mode';
 import { withHospitalDashboardPath } from '@/lib/tenant-routing';
 import type { ClinicType } from '@/lib/types';
 
@@ -332,6 +333,21 @@ export default function DashboardLayout({
 
     void loadHospitalBranding();
   }, [router, user]);
+
+  useEffect(() => {
+    const themeMode = normalizeThemeMode(hospital?.settings?.appearance?.themeMode);
+    applyThemeMode(themeMode);
+
+    if (themeMode !== 'system' || typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleSystemThemeChange = () => applyThemeMode('system');
+    mediaQuery.addEventListener('change', handleSystemThemeChange);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleSystemThemeChange);
+    };
+  }, [hospital?.settings?.appearance?.themeMode]);
 
   useEffect(() => {
     if (!user) return;
@@ -666,7 +682,7 @@ export default function DashboardLayout({
 
   return (
     <div
-      className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(124,199,184,0.12),transparent_25%),linear-gradient(180deg,rgba(248,252,251,1),rgba(240,247,246,1))] print:bg-white"
+      className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(124,199,184,0.12),transparent_25%),linear-gradient(180deg,rgba(248,252,251,1),rgba(240,247,246,1))] print:bg-white dark:bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_26%),linear-gradient(180deg,rgba(2,6,23,1),rgba(15,23,42,1))]"
       style={tenantThemeStyle}
     >
       {/* Sidebar */}
@@ -771,7 +787,7 @@ export default function DashboardLayout({
       {/* Main Content */}
       <div className={`flex min-h-screen min-w-0 flex-col print:block print:min-h-0 print:pl-0 ${sidebarWidthClass}`}>
         {/* Top Header */}
-        <header className={`fixed left-0 right-0 top-0 z-40 flex items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-4 backdrop-blur-xl md:justify-end md:px-6 print:hidden ${sidebarWidthClass}`}>
+        <header className={`fixed left-0 right-0 top-0 z-40 flex items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-4 backdrop-blur-xl md:justify-end md:px-6 print:hidden dark:border-slate-800/80 dark:bg-slate-950/82 ${sidebarWidthClass}`}>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"

@@ -100,6 +100,9 @@ function getDefaultDemoHospitalSettings() {
       branding: {
         logoSize: 48,
       },
+      appearance: {
+        themeMode: 'light',
+      },
     },
     createdAt: now,
     updatedAt: now,
@@ -276,6 +279,10 @@ export class ApiClient {
           planLimits: {
             ...getDefaultDemoHospitalSettings().settings.planLimits,
             ...(parsed.settings?.planLimits || {}),
+          },
+          appearance: {
+            ...getDefaultDemoHospitalSettings().settings.appearance,
+            ...(parsed.settings?.appearance || {}),
           },
         },
       };

@@ -5,6 +5,7 @@ import Hospital from '@/lib/models/Hospital';
 import { getRequestUser, getUserHospitalId, isPlatformUser } from '@/app/api/_lib/request-auth';
 import { normalizeClinicTypes } from '@/lib/clinic-config';
 import { buildSubscriptionLifecycleUpdate, getSubscriptionLifecycle } from '@/lib/subscription-lifecycle';
+import { normalizeThemeMode } from '@/lib/theme-mode';
 
 function serializeHospital(hospital: any) {
   return {
@@ -108,6 +109,9 @@ export async function PATCH(request: NextRequest) {
     const branding = {
       logoSize: clampLogoSize(body.settings?.branding?.logoSize),
     };
+    const appearance = {
+      themeMode: normalizeThemeMode(body.settings?.appearance?.themeMode),
+    };
 
     if (brandColor && !isValidHexColor(brandColor)) {
       return NextResponse.json({ error: 'Brand color must be a valid hex color' }, { status: 400 });
@@ -120,6 +124,7 @@ export async function PATCH(request: NextRequest) {
       logoUrl: String(body.logoUrl || '').trim(),
       ...(brandColor ? { brandColor } : {}),
       'settings.branding': branding,
+      'settings.appearance': appearance,
     };
 
     const hospital = await Hospital.findByIdAndUpdate(hospitalId, update, {

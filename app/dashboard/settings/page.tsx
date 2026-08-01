@@ -2,18 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, CheckCircle, CreditCard, Palette, Save, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle, CreditCard, Moon, Palette, Save, Upload } from 'lucide-react';
 
 import { BrandMark } from '@/components/brand-mark';
 import { LoadingState } from '@/components/loading-state';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ApiClient } from '@/lib/api-client';
 import { getCurrentUser } from '@/lib/auth';
 import { CLINIC_TYPE_OPTIONS, normalizeClinicTypes } from '@/lib/clinic-config';
 import { getSubscriptionLifecycle } from '@/lib/subscription-lifecycle';
 import { getSubscriptionPlan } from '@/lib/subscription-plans';
+import { applyThemeMode, normalizeThemeMode, type ThemeMode } from '@/lib/theme-mode';
 import { withHospitalDashboardPath } from '@/lib/tenant-routing';
 import type { ClinicType, Hospital } from '@/lib/types';
 
@@ -39,6 +41,7 @@ type SettingsForm = {
   logoUrl: string;
   brandColor: string;
   logoSize: number;
+  themeMode: ThemeMode;
 };
 
 function getLogoSize(hospital?: Hospital | null) {
@@ -57,6 +60,7 @@ function toForm(hospital?: Hospital | null): SettingsForm {
     logoUrl: hospital?.logoUrl || '',
     brandColor: hospital?.brandColor || DEFAULT_BRAND_COLOR,
     logoSize: getLogoSize(hospital),
+    themeMode: normalizeThemeMode(hospital?.settings?.appearance?.themeMode),
   };
 }
 
@@ -119,10 +123,15 @@ export default function SettingsPage() {
   const currentPlan = getSubscriptionPlan(String(hospital?.subscriptionPlan || '')) || getSubscriptionPlan('clinic');
   const currentMaxUsers = Number(hospital?.settings?.planLimits?.maxUsers || currentPlan?.maxUsers || 0);
 
-  const updateForm = (key: keyof SettingsForm, value: string | number) => {
+  const updateForm = (key: keyof SettingsForm, value: string | number | ThemeMode) => {
     setForm((current) => ({ ...current, [key]: value }));
     setSuccess('');
     setError('');
+  };
+
+  const updateThemeMode = (themeMode: ThemeMode) => {
+    updateForm('themeMode', themeMode);
+    applyThemeMode(themeMode);
   };
 
   const handleSave = async (event: React.FormEvent) => {
@@ -140,6 +149,9 @@ export default function SettingsPage() {
           settings: {
             branding: {
               logoSize: form.logoSize,
+            },
+            appearance: {
+              themeMode: form.themeMode,
             },
           },
         });
@@ -159,6 +171,9 @@ export default function SettingsPage() {
         settings: {
           branding: {
             logoSize: form.logoSize,
+          },
+          appearance: {
+            themeMode: form.themeMode,
           },
         },
       });
@@ -437,6 +452,34 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+
+        {/* <Card className="xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Moon className="h-5 w-5" />
+              Appearance
+            </CardTitle>
+            <CardDescription>Choose how this hospital dashboard should look.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-[minmax(240px,360px)_1fr] md:items-start">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Theme Mode</label>
+              <Select value={form.themeMode} onValueChange={(value) => updateThemeMode(value as ThemeMode)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select theme mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light">Light</SelectItem>
+                  <SelectItem value="dark">Dark</SelectItem>
+                  <SelectItem value="system">Use device setting</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              Dark mode is saved for the hospital workspace, so every user sees the same appearance after refresh.
+            </div>
+          </CardContent>
+        </Card> */}
       </form>
 
       <Card>
