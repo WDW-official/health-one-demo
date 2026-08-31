@@ -4,6 +4,7 @@ import { jsonError, jsonOk } from '@/app/api/_lib/response';
 import { connectDB } from '@/lib/mongodb';
 import Hospital from '@/lib/models/Hospital';
 import { FEATURE_KEYS, hasHospitalFeature } from '@/lib/plan-access';
+import { getClinicTypeLabel, normalizeClinicTypes } from '@/lib/clinic-config';
 
 type DiagnosisSuggestion = {
   diagnosis: string;
@@ -13,6 +14,28 @@ type DiagnosisSuggestion = {
 
 function cleanText(value: unknown) {
   return String(value || '').trim().slice(0, 4000);
+}
+
+function cleanContextValue(value: unknown, depth = 0): unknown {
+  if (depth > 3 || value === null || value === undefined) return undefined;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return cleanText(value);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cleanContextValue(item, depth + 1))
+      .filter((item) => item !== undefined)
+      .slice(0, 20);
+  }
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, item]) => [key, cleanContextValue(item, depth + 1)])
+        .filter(([, item]) => item !== undefined)
+        .slice(0, 40)
+    );
+  }
+  return undefined;
 }
 
 function normalizeSuggestions(value: unknown): DiagnosisSuggestion[] {
@@ -63,6 +86,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const clinicTypes = normalizeClinicTypes([
+      body.clinicType,
+      ...((hospital as any)?.clinicTypes || []),
+    ]);
+    const clinicTypeLabels = clinicTypes.map(getClinicTypeLabel);
     const payload = {
       presentingComplaints: cleanText(body.presentingComplaints),
       examination: cleanText(body.examination),
@@ -75,6 +103,7 @@ export async function POST(request: NextRequest) {
             .slice(0, 20)
         : [],
       patientContext: cleanText(body.patientContext),
+      specialtyContext: cleanContextValue(body.specialtyContext),
     };
 
     const hasClinicalContext = [
@@ -103,12 +132,16 @@ export async function POST(request: NextRequest) {
           {
             role: 'system',
             content:
-              'You assist licensed dental clinicians by suggesting possible impression/diagnosis options from provided consultation notes. Do not make a definitive diagnosis. Do not invent findings. If evidence is limited, say so in the reason. Return only valid JSON with a suggestions array.',
+              'You assist licensed clinicians by suggesting possible impression/diagnosis options from provided consultation notes. Use the supplied clinic type context to keep suggestions relevant to the care setting. Do not make a definitive diagnosis. Do not invent findings. If evidence is limited, say so in the reason. Return only valid JSON with a suggestions array.',
           },
           {
             role: 'user',
             content: JSON.stringify({
-              task: 'Suggest 3 to 5 possible dental impression/diagnosis options for clinician review.',
+              task: 'Suggest 3 to 5 possible impression/diagnosis options for clinician review.',
+              clinicTypeContext: {
+                activeClinicType: clinicTypeLabels[0],
+                hospitalClinicTypes: clinicTypeLabels,
+              },
               requiredJsonShape: {
                 suggestions: [
                   {
